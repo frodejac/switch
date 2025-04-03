@@ -50,3 +50,36 @@
 - Mark completed items with `- [x]`
 - Feel free to add new sections as needed
 - Use this file to track both technical and non-technical tasks 
+
+
+----
+
+Goal structure:
+
+internal/
+├── api/
+│   ├── server.go
+│   ├── router.go
+│   └── handlers/
+│       ├── feature.go
+│       ├── store.go
+│       └── membership.go
+├── consensus/
+│   ├── node.go
+│   ├── fsm.go
+│   └── transport.go
+├── storage/
+│   ├── store.go
+│   ├── badger.go
+│   └── snapshot.go
+├── membership/
+│   ├── registry.go
+│   └── node.go
+├── rules/
+│   ├── engine.go
+│   ├── compiler.go
+│   └── cache.go
+├── config/
+│   └── config.go
+└── server/
+    └── server.go  (much slimmer, mainly orchestration)

@@ -12,11 +12,10 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/frodejac/switch/internal/logging"
-	"github.com/google/cel-go/cel"
+	"github.com/frodejac/switch/internal/rules"
 	"github.com/hashicorp/raft"
 	"github.com/labstack/echo/v4"
 	"github.com/mssola/useragent"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // handleDelete handles DELETE requests for feature flags
@@ -327,11 +326,21 @@ func (s *Server) handlePut(c echo.Context) error {
 
 	// Validate expression if present
 	if flagData.Expression != "" {
-		if _, issues := s.celEnv.Compile(flagData.Expression); issues != nil && issues.Err() != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid expression"})
+		// Use the rules engine to validate the expression
+		if _, err := s.rules.Compile(flagData.Expression); err != nil {
+			if compErr, ok := err.(*rules.CompilationError); ok {
+				return c.JSON(http.StatusBadRequest, map[string]interface{}{
+					"error": "invalid expression",
+					"details": map[string]interface{}{
+						"expression": compErr.Expression,
+						"issues":     compErr.Issues,
+					},
+				})
+			}
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 		}
 		// Clear any cached program for this key
-		s.celCache.Delete(fmt.Sprintf("%s/%s", store, key))
+		s.cache.Delete(fmt.Sprintf("%s/%s", store, key))
 	}
 
 	// Create command
@@ -387,8 +396,16 @@ func (s *Server) handleGet(c echo.Context) error {
 
 	// Create request context
 	request := map[string]interface{}{
-		"ip":      getClientIP(c),
-		"headers": c.Request().Header,
+		"ip": getClientIP(c),
+		"headers": func() map[string]interface{} {
+			headers := make(map[string]interface{})
+			for k, v := range c.Request().Header {
+				if len(v) > 0 {
+					headers[k] = v[0]
+				}
+			}
+			return headers
+		}(),
 	}
 
 	// Parse user agent for device info
@@ -437,44 +454,50 @@ func (s *Server) handleGet(c echo.Context) error {
 
 	// Try to get compiled program from cache
 	cacheKey := fmt.Sprintf("%s/%s", store, key)
-	var program cel.Program
-	if cached, ok := s.celCache.Load(cacheKey); ok {
-		program = cached.(cel.Program)
+	var program *rules.Program
+	if cached, ok := s.cache.Get(cacheKey); ok {
+		program = cached
 	} else {
 		// Compile and cache the program
-		ast, issues := s.celEnv.Compile(flagData.Expression)
-		if issues != nil && issues.Err() != nil {
+		var err error
+		program, err = s.rules.Compile(flagData.Expression)
+		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "invalid expression"})
 		}
+		s.cache.Set(cacheKey, program)
+	}
 
-		var err error
-		program, err = s.celEnv.Program(ast)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create program"})
+	// Create evaluation context
+	ctx := &rules.Context{
+		Key:     key,
+		Context: context,
+		Request: request,
+		Device:  device,
+		Time:    time.Now(),
+	}
+
+	// Evaluate the rule
+	result, err := s.rules.Evaluate(program, ctx)
+	if err != nil {
+		logging.Error("failed to evaluate expression",
+			"error", err,
+			"expression", flagData.Expression,
+			"context", ctx,
+		)
+
+		if evalErr, ok := err.(*rules.EvaluationError); ok {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{
+				"error": "failed to evaluate expression",
+				"details": map[string]interface{}{
+					"expression": flagData.Expression,
+					"error":      evalErr.Error(),
+				},
+			})
 		}
-
-		s.celCache.Store(cacheKey, program)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
-	// Convert context to protobuf struct
-	contextStruct, err := structpb.NewStruct(context)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "invalid context"})
-	}
-
-	// Evaluate the expression
-	result, _, err := program.Eval(map[string]interface{}{
-		"key":     key,
-		"context": contextStruct.AsMap(),
-		"request": request,
-		"device":  device,
-		"time":    time.Now(),
-	})
-	if err != nil {
-		logging.Error("evaluation failed", "error", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "evaluation failed"})
-	}
-
+	// Return the raw result
 	return c.JSON(http.StatusOK, result)
 }
 

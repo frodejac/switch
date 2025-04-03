@@ -6,16 +6,15 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/dgraph-io/badger/v4"
-	"github.com/google/cel-go/cel"
 	"github.com/hashicorp/raft"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
 	"github.com/frodejac/switch/internal/config"
 	"github.com/frodejac/switch/internal/logging"
+	"github.com/frodejac/switch/internal/rules"
 )
 
 // Server represents our feature flag server
@@ -24,10 +23,8 @@ type Server struct {
 	store      *badger.DB
 	raft       *raft.Raft
 	httpServer *echo.Echo
-	celEnv     *cel.Env
-
-	// CEL program cache
-	celCache sync.Map
+	rules      *rules.Engine
+	cache      *rules.Cache
 }
 
 // MembershipEntry represents a node's metadata in the membership register
@@ -94,18 +91,13 @@ func NewServer(config *config.ServerConfig) (*Server, error) {
 	}
 	s.store = store
 
-	// Initialize CEL environment
-	env, err := cel.NewEnv(
-		cel.Variable("key", cel.StringType),
-		cel.Variable("context", cel.MapType(cel.StringType, cel.DynType)),
-		cel.Variable("request", cel.MapType(cel.StringType, cel.DynType)),
-		cel.Variable("device", cel.MapType(cel.StringType, cel.DynType)),
-		cel.Variable("time", cel.TimestampType),
-	)
+	// Initialize rules engine
+	engine, err := rules.NewEngine()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create CEL environment: %v", err)
+		return nil, fmt.Errorf("failed to create rules engine: %v", err)
 	}
-	s.celEnv = env
+	s.rules = engine
+	s.cache = rules.NewCache()
 
 	// Initialize HTTP server
 	e := echo.New()
@@ -146,6 +138,47 @@ func (s *Server) Start() error {
 	}()
 
 	return nil
+}
+
+// preWarmCache loads all flags and pre-compiles their CEL expressions
+func (s *Server) preWarmCache() error {
+	return s.store.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			value, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+
+			var flagData struct {
+				Value      interface{} `json:"value"`
+				Expression string      `json:"expression,omitempty"`
+			}
+			if err := json.Unmarshal(value, &flagData); err != nil {
+				continue // Skip invalid entries
+			}
+
+			// Skip if no expression
+			if flagData.Expression == "" {
+				continue
+			}
+
+			// Compile and cache the program
+			program, err := s.rules.Compile(flagData.Expression)
+			if err != nil {
+				continue // Skip invalid expressions
+			}
+
+			// Store in cache
+			s.cache.Set(string(item.Key()), program)
+		}
+
+		return nil
+	})
 }
 
 // Stop gracefully stops the server
