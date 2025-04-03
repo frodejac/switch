@@ -20,6 +20,7 @@ import (
 	raftboltdb "github.com/hashicorp/raft-boltdb"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/mssola/useragent"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/frodejac/switch/internal/logging"
@@ -122,6 +123,9 @@ func NewServer(config *Config) (*Server, error) {
 	env, err := cel.NewEnv(
 		cel.Variable("key", cel.StringType),
 		cel.Variable("context", cel.MapType(cel.StringType, cel.DynType)),
+		cel.Variable("request", cel.MapType(cel.StringType, cel.DynType)),
+		cel.Variable("device", cel.MapType(cel.StringType, cel.DynType)),
+		cel.Variable("time", cel.TimestampType),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create CEL environment: %v", err)
@@ -285,6 +289,28 @@ func validateStoreName(store string) error {
 	return nil
 }
 
+// getClientIP returns the real client IP address, handling X-Forwarded-For header
+func getClientIP(c echo.Context) string {
+	// First try X-Forwarded-For header
+	forwarded := c.Request().Header.Get("X-Forwarded-For")
+	if forwarded != "" {
+		// X-Forwarded-For can contain multiple IPs, the first one is the client
+		ips := strings.Split(forwarded, ",")
+		if len(ips) > 0 {
+			return strings.TrimSpace(ips[0])
+		}
+	}
+
+	// Then try X-Real-IP header
+	realIP := c.Request().Header.Get("X-Real-IP")
+	if realIP != "" {
+		return realIP
+	}
+
+	// Fall back to the direct connection IP
+	return c.RealIP()
+}
+
 // handleGet handles GET requests for feature flags
 func (s *Server) handleGet(c echo.Context) error {
 	store := c.Param("store")
@@ -299,6 +325,25 @@ func (s *Server) handleGet(c echo.Context) error {
 		if len(v) > 0 {
 			context[k] = v[0]
 		}
+	}
+
+	// Create request context
+	request := map[string]interface{}{
+		"ip":      getClientIP(c),
+		"headers": c.Request().Header,
+	}
+
+	// Parse user agent for device info
+	ua := useragent.New(c.Request().UserAgent())
+	browserName, browserVersion := ua.Browser()
+	device := map[string]interface{}{
+		"mobile": ua.Mobile(),
+		"bot":    ua.Bot(),
+		"os":     ua.OS(),
+		"browser": map[string]interface{}{
+			"name":    browserName,
+			"version": browserVersion,
+		},
 	}
 
 	// Read from BadgerDB
@@ -363,8 +408,12 @@ func (s *Server) handleGet(c echo.Context) error {
 	result, _, err := program.Eval(map[string]interface{}{
 		"key":     key,
 		"context": contextStruct.AsMap(),
+		"request": request,
+		"device":  device,
+		"time":    time.Now(),
 	})
 	if err != nil {
+		logging.Error("evaluation failed", "error", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "evaluation failed"})
 	}
 
@@ -820,4 +869,9 @@ func (s *Server) handleListStores(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, storeList)
+}
+
+// GetRaftState returns the current state of the Raft node
+func (s *Server) GetRaftState() raft.RaftState {
+	return s.raft.State()
 }

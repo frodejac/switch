@@ -12,7 +12,7 @@ services:
       "--raft-addr=:9991",
       "--raft-advertise-addr=node1:9991",
       "--raft-dir=data",
-      # "--bootstrap", # Uncomment when starting for the first time
+      "--bootstrap", # Uncomment when starting for the first time
       "--pre-warm"]
     networks:
       - app-network
