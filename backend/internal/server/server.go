@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -62,7 +63,7 @@ type MembershipEntry struct {
 
 // membershipKey returns the BadgerDB key for a node's membership entry
 func membershipKey(nodeID string) []byte {
-	return []byte(fmt.Sprintf("membership/%s", nodeID))
+	return []byte(fmt.Sprintf("__membership/%s", nodeID))
 }
 
 // GetMembership returns the membership information for a node
@@ -132,11 +133,18 @@ func NewServer(config *Config) (*Server, error) {
 	e.Logger = logging.NewEchoLogger(logging.Logger)
 	e.Use(logging.LoggerMiddleware())
 	e.Use(middleware.Recover())
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: []string{"*"},
+		AllowMethods: []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete},
+		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept},
+	}))
 
 	// Register routes
 	e.GET("/:store/:key", s.handleGet)
 	e.PUT("/:store/:key", s.handlePut)
 	e.POST("/join", s.handleJoin)
+	e.GET("/:store", s.handleList)
+	e.GET("/stores", s.handleListStores)
 	s.httpServer = e
 
 	return s, nil
@@ -266,9 +274,23 @@ func (s *Server) Join(addr string) error {
 	}
 }
 
+// validateStoreName checks if a store name is valid
+func validateStoreName(store string) error {
+	if store == "" {
+		return fmt.Errorf("store name cannot be empty")
+	}
+	if strings.HasPrefix(store, "__") {
+		return fmt.Errorf("store name cannot start with '__'")
+	}
+	return nil
+}
+
 // handleGet handles GET requests for feature flags
 func (s *Server) handleGet(c echo.Context) error {
 	store := c.Param("store")
+	if err := validateStoreName(store); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
 	key := c.Param("key")
 
 	// Get context values from query parameters
@@ -352,6 +374,9 @@ func (s *Server) handleGet(c echo.Context) error {
 // handlePut handles PUT requests for feature flags
 func (s *Server) handlePut(c echo.Context) error {
 	store := c.Param("store")
+	if err := validateStoreName(store); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
 	key := c.Param("key")
 
 	// If not leader, forward to leader immediately
@@ -720,4 +745,79 @@ func (s *Server) setupRaft() error {
 	}
 
 	return nil
+}
+
+// handleList returns all flags in a store
+func (s *Server) handleList(c echo.Context) error {
+	store := c.Param("store")
+	if err := validateStoreName(store); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+
+	flags := make(map[string]interface{})
+	err := s.store.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		prefix := []byte(store + "/")
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			item := it.Item()
+			key := string(item.Key())
+			err := item.Value(func(val []byte) error {
+				var value interface{}
+				if err := json.Unmarshal(val, &value); err != nil {
+					return err
+				}
+				flags[key] = value
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to list flags: %v", err))
+	}
+
+	return c.JSON(http.StatusOK, flags)
+}
+
+// handleListStores returns all available stores
+func (s *Server) handleListStores(c echo.Context) error {
+	stores := make(map[string]bool)
+	err := s.store.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			key := string(item.Key())
+			// Extract store name from key (format: "store/key")
+			if parts := strings.Split(key, "/"); len(parts) > 1 {
+				store := parts[0]
+				// Skip private stores (starting with __)
+				if !strings.HasPrefix(store, "__") {
+					stores[store] = true
+				}
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to list stores: %v", err))
+	}
+
+	// Convert map to slice
+	storeList := make([]string, 0, len(stores))
+	for store := range stores {
+		storeList = append(storeList, store)
+	}
+
+	return c.JSON(http.StatusOK, storeList)
 }
