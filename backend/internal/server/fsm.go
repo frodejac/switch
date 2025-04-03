@@ -40,6 +40,12 @@ func (f *fsm) Apply(log *raft.Log) interface{} {
 		return f.store.Update(func(txn *badger.Txn) error {
 			return txn.Set([]byte(cmd.Key), cmd.Value)
 		})
+	case "delete":
+		// Handle flag deletion
+		logging.Debug("deleting flag", "key", cmd.Key)
+		return f.store.Update(func(txn *badger.Txn) error {
+			return txn.Delete([]byte(cmd.Key))
+		})
 	default:
 		logging.Warn("unknown command type", "type", cmd.Type)
 		return fmt.Errorf("unknown command type: %s", cmd.Type)

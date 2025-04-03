@@ -46,6 +46,10 @@ export const setFlag = async (store: string, key: string, flag: Partial<FeatureF
   await api.put(`/${store}/${key}`, flag);
 };
 
+export const deleteFlag = async (store: string, key: string): Promise<void> => {
+  await api.delete(`/${store}/${key}`);
+};
+
 export const listFlags = async (store: string): Promise<FeatureFlag[]> => {
   const response = await api.get(`/${store}`);
   // Transform the map response into an array of flags

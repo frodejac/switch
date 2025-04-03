@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FeatureFlag, FlagContext } from '../types/flag';
-import { getFlag, setFlag, listFlags } from '../services/api';
+import { getFlag, setFlag, listFlags, deleteFlag } from '../services/api';
 
 export const useFlags = (store: string) => {
   const queryClient = useQueryClient();
@@ -18,6 +18,13 @@ export const useFlags = (store: string) => {
     },
   });
 
+  const { mutate: removeFlag } = useMutation({
+    mutationFn: (key: string) => deleteFlag(store, key),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['flags', store] });
+    },
+  });
+
   const getFlagValue = async (key: string, context?: FlagContext) => {
     return getFlag(store, key, context);
   };
@@ -26,6 +33,7 @@ export const useFlags = (store: string) => {
     flags,
     isLoading,
     updateFlag,
+    removeFlag,
     getFlagValue,
   };
 }; 

@@ -149,6 +149,7 @@ func NewServer(config *Config) (*Server, error) {
 	e.POST("/join", s.handleJoin)
 	e.GET("/:store", s.handleList)
 	e.GET("/stores", s.handleListStores)
+	e.DELETE("/:store/:key", s.handleDelete)
 	s.httpServer = e
 
 	return s, nil
@@ -874,4 +875,76 @@ func (s *Server) handleListStores(c echo.Context) error {
 // GetRaftState returns the current state of the Raft node
 func (s *Server) GetRaftState() raft.RaftState {
 	return s.raft.State()
+}
+
+// handleDelete handles DELETE requests for feature flags
+func (s *Server) handleDelete(c echo.Context) error {
+	store := c.Param("store")
+	if err := validateStoreName(store); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	key := c.Param("key")
+
+	// If not leader, forward to leader immediately
+	if s.raft.State() != raft.Leader {
+		leaderHTTP, err := s.GetLeaderHTTPAddr()
+		if err != nil {
+			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": fmt.Sprintf("failed to get leader address: %v", err)})
+		}
+
+		// Clone the request and update the URL
+		urlStr := fmt.Sprintf("http://%s/%s/%s", leaderHTTP, store, key)
+		req := c.Request().Clone(c.Request().Context())
+		req.URL, err = url.Parse(urlStr)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to parse leader URL: %v", err)})
+		}
+		req.RequestURI = "" // Clear RequestURI as it's not allowed in client requests
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to forward request: %v", err)})
+		}
+		defer resp.Body.Close()
+
+		// Copy the response headers and status code
+		for k, v := range resp.Header {
+			c.Response().Header()[k] = v
+		}
+		c.Response().WriteHeader(resp.StatusCode)
+
+		// Stream the response body
+		_, err = io.Copy(c.Response().Writer, resp.Body)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// Create command
+	cmd := struct {
+		Type  string `json:"type"`
+		Key   string `json:"key"`
+		Value []byte `json:"value"`
+	}{
+		Type: "delete",
+		Key:  fmt.Sprintf("%s/%s", store, key),
+	}
+
+	// Convert command to JSON
+	cmdBytes, err := json.Marshal(cmd)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to marshal command"})
+	}
+
+	logging.Info("deleting flag via Raft")
+
+	// Apply via Raft
+	future := s.raft.Apply(cmdBytes, 5*time.Second)
+	if err := future.Error(); err != nil {
+		logging.Error("failed to apply delete", "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to apply delete"})
+	}
+	logging.Info("applied flag deletion")
+	return c.NoContent(http.StatusNoContent)
 }
