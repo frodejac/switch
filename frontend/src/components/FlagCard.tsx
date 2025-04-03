@@ -7,8 +7,7 @@ import {
   TextField,
   Button,
   Box,
-  Switch,
-  FormControlLabel,
+  Chip,
 } from '@mui/material';
 import { FeatureFlag } from '../types/flag';
 
@@ -37,19 +36,45 @@ export const FlagCard = ({ flag, onUpdate }: FlagCardProps) => {
     setIsEditing(false);
   };
 
+  const formatValue = (value: any) => {
+    if (typeof value === 'boolean') {
+      return (
+        <Chip
+          label={value ? 'Enabled' : 'Disabled'}
+          color={value ? 'success' : 'default'}
+          size="small"
+        />
+      );
+    }
+    if (typeof value === 'number') {
+      return <Typography variant="body1">{value}</Typography>;
+    }
+    if (typeof value === 'string') {
+      return <Typography variant="body1">{value}</Typography>;
+    }
+    return <Typography variant="body1">{JSON.stringify(value)}</Typography>;
+  };
+
   return (
-    <Card sx={{ mb: 2 }}>
-      <CardContent>
-        <Typography variant="h6" gutterBottom>
-          {flag.key}
-        </Typography>
+    <Card sx={{ mb: 1.5, boxShadow: 1 }}>
+      <CardContent sx={{ p: 2 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            {flag.key}
+          </Typography>
+          <Button size="small" variant="outlined" onClick={() => setIsEditing(true)}>
+            Edit
+          </Button>
+        </Box>
+        
         {isEditing ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
             <TextField
               label="Value"
               value={editedFlag.value}
               onChange={(e) => setEditedFlag({ ...editedFlag, value: e.target.value })}
               fullWidth
+              size="small"
             />
             <TextField
               label="CEL Expression"
@@ -58,38 +83,48 @@ export const FlagCard = ({ flag, onUpdate }: FlagCardProps) => {
               fullWidth
               multiline
               rows={2}
+              size="small"
               placeholder="e.g., context.region == 'us-west' && context.environment == 'prod'"
             />
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+              <Button size="small" onClick={handleCancel}>
+                Cancel
+              </Button>
+              <Button size="small" variant="contained" onClick={handleSave}>
+                Save
+              </Button>
+            </Box>
           </Box>
         ) : (
-          <Box>
-            <Typography variant="body1" gutterBottom>
-              Value: {JSON.stringify(flag.value)}
-            </Typography>
-            {flag.expression && (
-              <Typography variant="body2" color="text.secondary">
-                Expression: {flag.expression}
-              </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {!flag.expression ? (
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                  Value
+                </Typography>
+                {formatValue(flag.value)}
+              </Box>
+            ) : (
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                  Expression
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    backgroundColor: 'grey.100',
+                    p: 1,
+                    borderRadius: 1,
+                    fontFamily: 'monospace',
+                  }}
+                >
+                  {flag.expression}
+                </Typography>
+              </Box>
             )}
           </Box>
         )}
       </CardContent>
-      <CardActions>
-        {isEditing ? (
-          <>
-            <Button size="small" onClick={handleSave}>
-              Save
-            </Button>
-            <Button size="small" onClick={handleCancel}>
-              Cancel
-            </Button>
-          </>
-        ) : (
-          <Button size="small" onClick={() => setIsEditing(true)}>
-            Edit
-          </Button>
-        )}
-      </CardActions>
     </Card>
   );
 }; 
