@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/frodejac/switch/internal/config"
 	"github.com/frodejac/switch/internal/logging"
 	"github.com/frodejac/switch/internal/server"
 )
@@ -17,38 +18,30 @@ func main() {
 	logging.Init(slog.LevelInfo)
 
 	// Parse command line flags
-	nodeID := flag.String("node-id", "", "Node ID for this server")
-	httpAddr := flag.String("http-addr", "0.0.0.0:9990", "HTTP server address")
-	raftAddr := flag.String("raft-addr", "0.0.0.0:9991", "Raft server address")
-	raftAdvertiseAddr := flag.String("raft-advertise-addr", "", "Raft advertised address")
-	raftDir := flag.String("raft-dir", "data", "Raft data directory")
-	bootstrap := flag.Bool("bootstrap", false, "Bootstrap the cluster")
-	join := flag.String("join", "", "Address of leader node to join")
-	preWarm := flag.Bool("pre-warm", false, "Pre-warm the CEL cache on startup")
-	joinTimeout := flag.Duration("join-timeout", 10*time.Second, "Timeout for join and leader election operations")
+
+	config := &config.ServerConfig{}
+
+	flag.StringVar(&config.Node.ID, "node-id", "", "Node ID for this server")
+	flag.StringVar(&config.HTTP.Address, "http-addr", "0.0.0.0:9990", "HTTP server address")
+	flag.StringVar(&config.Raft.Address, "raft-addr", "0.0.0.0:9991", "Raft server address")
+	flag.StringVar(&config.Raft.AdvertiseAddr, "raft-advertise-addr", "", "Raft advertised address")
+	flag.StringVar(&config.Raft.Directory, "raft-dir", "data", "Raft data directory")
+	flag.BoolVar(&config.Raft.Bootstrap, "bootstrap", false, "Bootstrap the cluster")
+	flag.StringVar(&config.Raft.JoinAddress, "join", "", "Address of leader node to join")
+	flag.BoolVar(&config.Features.PreWarmRules, "pre-warm", false, "Pre-warm the CEL cache on startup")
+	flag.DurationVar(&config.Raft.JoinTimeout, "join-timeout", 10*time.Second, "Timeout for join and leader election operations")
 	flag.Parse()
 
-	if *nodeID == "" {
-		logging.Error("node-id is required")
+	if err := config.Validate(); err != nil {
+		logging.Error("failed to validate config", "error", err)
 		os.Exit(1)
 	}
 
 	// Ensure data directories exist
-	if err := os.MkdirAll(*raftDir, 0755); err != nil {
+	// TODO: This should be done in the server constructor
+	if err := os.MkdirAll(config.Raft.Directory, 0755); err != nil {
 		logging.Error("failed to create data directory", "error", err)
 		os.Exit(1)
-	}
-
-	// Create and start server
-	config := &server.Config{
-		NodeID:            *nodeID,
-		HTTPAddr:          *httpAddr,
-		RaftAddr:          *raftAddr,
-		RaftAdvertiseAddr: *raftAdvertiseAddr,
-		RaftDir:           *raftDir,
-		Bootstrap:         *bootstrap,
-		PreWarm:           *preWarm,
-		JoinTimeout:       *joinTimeout,
 	}
 
 	srv, err := server.NewServer(config)
@@ -63,9 +56,9 @@ func main() {
 	}
 
 	// If join address specified, attempt to join the cluster
-	if *join != "" {
-		if err := srv.Join(*join); err != nil {
-			logging.Error("failed to join cluster", "address", *join, "error", err)
+	if config.Raft.JoinAddress != "" {
+		if err := srv.Join(config.Raft.JoinAddress); err != nil {
+			logging.Error("failed to join cluster", "address", config.Raft.JoinAddress, "error", err)
 			os.Exit(1)
 		}
 	}
