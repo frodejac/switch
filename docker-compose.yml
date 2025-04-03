@@ -1,0 +1,73 @@
+services:
+  node1:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "9990:9990"  # HTTP API
+      - "9991:9991"  # Raft
+    command: ["./switch", 
+      "--node-id=node1",
+      "--http-addr=:9990",
+      "--raft-addr=:9991",
+      "--raft-advertise-addr=node1:9991",
+      "--raft-dir=data",
+      # "--bootstrap", # Uncomment when starting for the first time
+      "--pre-warm"]
+    networks:
+      - app-network
+
+  node2:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "9992:9992"  # HTTP API
+      - "9993:9993"  # Raft
+    command: ["./switch",
+      "--node-id=node2",
+      "--http-addr=:9992",
+      "--raft-addr=:9993",
+      "--raft-advertise-addr=node2:9993",
+      "--raft-dir=data",
+      "--join=node1:9990"]
+    networks:
+      - app-network
+    depends_on:
+      - node1
+
+  node3:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "9994:9994"  # HTTP API
+      - "9995:9995"  # Raft
+    command: ["./switch",
+      "--node-id=node3",
+      "--http-addr=:9994",
+      "--raft-addr=:9995",
+      "--raft-advertise-addr=node3:9995",
+      "--raft-dir=data",
+      "--join=node1:9990"]
+    networks:
+      - app-network
+    depends_on:
+      - node1
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:9990
+    depends_on:
+      - node1
+
+networks:
+  app-network:
