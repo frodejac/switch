@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/google/cel-go/cel"
@@ -18,18 +17,6 @@ import (
 	"github.com/frodejac/switch/internal/config"
 	"github.com/frodejac/switch/internal/logging"
 )
-
-// Config holds the server configuration
-type Config struct {
-	NodeID            string
-	HTTPAddr          string
-	RaftAddr          string
-	RaftAdvertiseAddr string // Advertised Raft address for other nodes to connect to
-	RaftDir           string
-	Bootstrap         bool
-	PreWarm           bool          // Whether to pre-warm the CEL cache on startup
-	JoinTimeout       time.Duration // Timeout for join and leader election operations
-}
 
 // Server represents our feature flag server
 type Server struct {
