@@ -13,10 +13,13 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Alert,
 } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { FeatureFlag } from '../types/flag';
+import { getFlag } from '../services/api';
 
 interface FlagCardProps {
   flag: FeatureFlag;
@@ -27,6 +30,9 @@ interface FlagCardProps {
 export const FlagCard = ({ flag, onUpdate, onDelete }: FlagCardProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isTryItOutDialogOpen, setIsTryItOutDialogOpen] = useState(false);
+  const [tryItOutResult, setTryItOutResult] = useState<any>(null);
+  const [tryItOutError, setTryItOutError] = useState<string | null>(null);
   const [editedFlag, setEditedFlag] = useState<Partial<FeatureFlag>>({
     value: flag.value,
     expression: flag.expression,
@@ -48,6 +54,18 @@ export const FlagCard = ({ flag, onUpdate, onDelete }: FlagCardProps) => {
   const handleDelete = () => {
     onDelete(flag.key);
     setIsDeleteDialogOpen(false);
+  };
+
+  const handleTryItOut = async () => {
+    try {
+      setTryItOutError(null);
+      const result = await getFlag(flag.store, flag.key);
+      setTryItOutResult(result);
+      setIsTryItOutDialogOpen(true);
+    } catch (error) {
+      setTryItOutError(error instanceof Error ? error.message : 'An error occurred');
+      setIsTryItOutDialogOpen(true);
+    }
   };
 
   const formatValue = (value: any) => {
@@ -78,6 +96,15 @@ export const FlagCard = ({ flag, onUpdate, onDelete }: FlagCardProps) => {
               {flag.key}
             </Typography>
             <Box>
+              <Button 
+                size="small" 
+                variant="outlined" 
+                onClick={handleTryItOut} 
+                sx={{ mr: 1 }} 
+                startIcon={<PlayArrowIcon />}
+              >
+                Try it out
+              </Button>
               <Button size="small" variant="outlined" onClick={() => setIsEditing(true)} sx={{ mr: 1 }} startIcon={<EditOutlinedIcon />}>
                 Edit
               </Button>
@@ -171,6 +198,27 @@ export const FlagCard = ({ flag, onUpdate, onDelete }: FlagCardProps) => {
           <Button onClick={handleDelete} color="error" variant="contained">
             Delete
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={isTryItOutDialogOpen} onClose={() => setIsTryItOutDialogOpen(false)}>
+        <DialogTitle>Try it out - {flag.key}</DialogTitle>
+        <DialogContent>
+          {tryItOutError ? (
+            <Alert severity="error" sx={{ mt: 1 }}>
+              {tryItOutError}
+            </Alert>
+          ) : (
+            <Box sx={{ mt: 1 }}>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                Result:
+              </Typography>
+              {formatValue(tryItOutResult)}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsTryItOutDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </>

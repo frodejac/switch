@@ -64,7 +64,8 @@ export const listFlags = async (store: string): Promise<FeatureFlag[]> => {
       const key = fullKey.split('/')[1];
       return {
         key,
-        ...value as Omit<FeatureFlag, 'key'>
+        store,
+        ...value as Omit<FeatureFlag, 'key' | 'store'>
       };
     });
 };
