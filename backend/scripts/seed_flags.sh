@@ -45,7 +45,7 @@ create_flag "demo" "human_only" "enabled" \
 
 # Example 6: OS-specific feature
 create_flag "demo" "macos_feature" "enabled" \
-    "device.os == \"macOS\" ? \"enabled\" : \"disabled\""
+    "device.os.name == \"macOS\" ? \"enabled\" : \"disabled\""
 
 # Example 7: Browser version check
 create_flag "demo" "modern_browser" "enabled" \
@@ -53,7 +53,7 @@ create_flag "demo" "modern_browser" "enabled" \
 
 # Example 8: Complex device targeting
 create_flag "demo" "premium_mobile" "enabled" \
-    "device.mobile && device.os == \"iOS\" && device.browser.name == \"Safari\" ? \"enabled\" : \"disabled\""
+    "device.mobile && device.os.name == \"iOS\" && device.browser.name == \"Safari\" ? \"enabled\" : \"disabled\""
 
 # Example 9: Time-based with device targeting
 create_flag "demo" "mobile_promo" "enabled" \

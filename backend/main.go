@@ -15,44 +15,48 @@ import (
 
 func main() {
 	// Initialize logging
-	logging.Init(slog.LevelInfo)
+	loglevel := slog.LevelInfo
+	if os.Getenv("DEBUG") != "" {
+		loglevel = slog.LevelDebug
+	}
+	logging.Init(loglevel)
 
 	// Parse command line flags
-	config := &config.ServerConfig{}
+	cfg := &config.ServerConfig{}
 
-	flag.StringVar(&config.Node.ID, "node-id", "", "Node ID for this server")
-	flag.StringVar(&config.HTTP.Address, "http-addr", "0.0.0.0:9990", "HTTP server address")
-	flag.StringVar(&config.Raft.Address, "raft-addr", "0.0.0.0:9991", "Raft server address")
-	flag.StringVar(&config.Raft.AdvertiseAddr, "raft-advertise-addr", "", "Raft advertised address")
-	flag.StringVar(&config.Raft.Directory, "raft-dir", "data", "Raft data directory")
-	flag.BoolVar(&config.Raft.Bootstrap, "bootstrap", false, "Bootstrap the cluster")
-	flag.StringVar(&config.Raft.JoinAddress, "join", "", "Address of leader node to join")
-	flag.BoolVar(&config.Features.PreWarmRules, "pre-warm", false, "Pre-warm the CEL cache on startup")
-	flag.DurationVar(&config.Raft.JoinTimeout, "join-timeout", 10*time.Second, "Timeout for join and leader election operations")
-	flag.StringVar(&config.Storage.FeatureFlags, "feature-flags-dir", "data/feature_flags", "Directory for feature flag storage")
-	flag.StringVar(&config.Storage.Membership, "membership-dir", "data/membership", "Directory for membership storage")
+	flag.StringVar(&cfg.Node.ID, "node-id", "", "Node ID for this server")
+	flag.StringVar(&cfg.HTTP.Address, "http-addr", "0.0.0.0:9990", "HTTP server address")
+	flag.StringVar(&cfg.Raft.Address, "raft-addr", "0.0.0.0:9991", "Raft server address")
+	flag.StringVar(&cfg.Raft.AdvertiseAddr, "raft-advertise-addr", "", "Raft advertised address")
+	flag.StringVar(&cfg.Raft.Directory, "raft-dir", "data", "Raft data directory")
+	flag.BoolVar(&cfg.Raft.Bootstrap, "bootstrap", false, "Bootstrap the cluster")
+	flag.StringVar(&cfg.Raft.JoinAddress, "join", "", "Address of leader node to join")
+	flag.BoolVar(&cfg.Features.PreWarmRules, "pre-warm", false, "Pre-warm the CEL cache on startup")
+	flag.DurationVar(&cfg.Raft.JoinTimeout, "join-timeout", 10*time.Second, "Timeout for join and leader election operations")
+	flag.StringVar(&cfg.Storage.FeatureFlags, "feature-flags-dir", "data/feature_flags", "Directory for feature flag storage")
+	flag.StringVar(&cfg.Storage.Membership, "membership-dir", "data/membership", "Directory for membership storage")
 	flag.Parse()
 
-	if err := config.Validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		logging.Error("failed to validate config", "error", err)
 		os.Exit(1)
 	}
 
 	// Ensure data directories exist
-	if err := os.MkdirAll(config.Raft.Directory, 0755); err != nil {
+	if err := os.MkdirAll(cfg.Raft.Directory, 0755); err != nil {
 		logging.Error("failed to create raft directory", "error", err)
 		os.Exit(1)
 	}
-	if err := os.MkdirAll(config.Storage.FeatureFlags, 0755); err != nil {
+	if err := os.MkdirAll(cfg.Storage.FeatureFlags, 0755); err != nil {
 		logging.Error("failed to create feature flags directory", "error", err)
 		os.Exit(1)
 	}
-	if err := os.MkdirAll(config.Storage.Membership, 0755); err != nil {
+	if err := os.MkdirAll(cfg.Storage.Membership, 0755); err != nil {
 		logging.Error("failed to create membership directory", "error", err)
 		os.Exit(1)
 	}
 
-	srv, err := server.NewServer(config)
+	srv, err := server.NewServer(cfg)
 	if err != nil {
 		logging.Error("failed to create server", "error", err)
 		os.Exit(1)
@@ -61,14 +65,6 @@ func main() {
 	if err := srv.Start(); err != nil {
 		logging.Error("failed to start server", "error", err)
 		os.Exit(1)
-	}
-
-	// If join address specified, attempt to join the cluster
-	if config.Raft.JoinAddress != "" {
-		if err := srv.Join(config.Raft.JoinAddress); err != nil {
-			logging.Error("failed to join cluster", "address", config.Raft.JoinAddress, "error", err)
-			os.Exit(1)
-		}
 	}
 
 	// Wait for interrupt signal

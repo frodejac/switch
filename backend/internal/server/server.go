@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/hashicorp/raft"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
 	"github.com/frodejac/switch/internal/config"
+	"github.com/frodejac/switch/internal/consensus"
 	"github.com/frodejac/switch/internal/logging"
 	"github.com/frodejac/switch/internal/rules"
 	"github.com/frodejac/switch/internal/storage"
@@ -21,28 +21,10 @@ type Server struct {
 	config     *config.ServerConfig
 	store      storage.Store
 	membership storage.MembershipStore
-	raft       *raft.Raft
+	raft       *consensus.RaftNode
 	httpServer *echo.Echo
 	rules      *rules.Engine
 	cache      *rules.Cache
-}
-
-// GetLeaderHTTPAddr returns the HTTP address of the current leader
-func (s *Server) GetLeaderHTTPAddr() (string, error) {
-	_, leaderID := s.raft.LeaderWithID()
-	if leaderID == "" {
-		return "", fmt.Errorf("no leader found")
-	}
-
-	logging.Info("fetching leader membership data", "leader", leaderID)
-
-	// Get membership information for the leader
-	membership, err := s.membership.GetMembership(nil, string(leaderID))
-	if err != nil {
-		return "", fmt.Errorf("failed to get leader membership: %v", err)
-	}
-
-	return membership.HTTPAddr, nil
 }
 
 // NewServer creates a new server instance
@@ -94,6 +76,7 @@ func NewServer(config *config.ServerConfig) (*Server, error) {
 	e.GET("/:store", s.handleList)
 	e.GET("/stores", s.handleListStores)
 	e.DELETE("/:store/:key", s.handleDelete)
+	e.GET("/status", s.handleStatus)
 	s.httpServer = e
 
 	return s, nil
@@ -104,6 +87,13 @@ func (s *Server) Start() error {
 	// Initialize Raft
 	if err := s.setupRaft(); err != nil {
 		return fmt.Errorf("failed to setup raft: %v", err)
+	}
+
+	// If we have a join address, try to join the cluster
+	if s.config.Raft.JoinAddress != "" {
+		if err := s.JoinCluster(s.config.Raft.JoinAddress); err != nil {
+			return fmt.Errorf("failed to join cluster: %v", err)
+		}
 	}
 
 	// Start HTTP server
@@ -158,7 +148,9 @@ func (s *Server) Stop() error {
 	}
 
 	if s.raft != nil {
-		s.raft.Shutdown()
+		if err := s.raft.Shutdown(); err != nil {
+			return fmt.Errorf("failed to stop raft node: %v", err)
+		}
 	}
 
 	if s.store != nil {

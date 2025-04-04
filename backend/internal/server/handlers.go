@@ -2,9 +2,12 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -27,9 +30,10 @@ func (s *Server) handleDelete(c echo.Context) error {
 	key := c.Param("key")
 
 	// If not leader, forward to leader immediately
-	if s.raft.State() != raft.Leader {
+	if s.raft.GetState() != raft.Leader {
 		leaderHTTP, err := s.GetLeaderHTTPAddr()
 		if err != nil {
+			logging.Error("failed to get leader address", "error", err)
 			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": fmt.Sprintf("failed to get leader address: %v", err)})
 		}
 
@@ -72,17 +76,10 @@ func (s *Server) handleDelete(c echo.Context) error {
 		Key:  fmt.Sprintf("%s/%s", store, key),
 	}
 
-	// Convert command to JSON
-	cmdBytes, err := json.Marshal(cmd)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to marshal command"})
-	}
-
 	logging.Info("deleting flag via Raft")
 
 	// Apply via Raft
-	future := s.raft.Apply(cmdBytes, 5*time.Second)
-	if err := future.Error(); err != nil {
+	if err := s.raft.Apply(cmd, 5*time.Second); err != nil {
 		logging.Error("failed to apply delete", "error", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to apply delete"})
 	}
@@ -92,7 +89,7 @@ func (s *Server) handleDelete(c echo.Context) error {
 
 // handleListStores returns all available stores
 func (s *Server) handleListStores(c echo.Context) error {
-	keys, err := s.store.List(nil, "")
+	keys, err := s.store.List(context.Background(), "")
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to list stores: %v", err))
 	}
@@ -125,7 +122,7 @@ func (s *Server) handleList(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
-	values, err := s.store.ListWithValues(nil, store+"/")
+	values, err := s.store.ListWithValues(context.Background(), store+"/")
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to list flags: %v", err))
 	}
@@ -155,17 +152,18 @@ func (s *Server) handleJoin(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to parse join request"})
 	}
 
-	logging.Info("received join request", "node", joinRequest.NodeID)
+	logging.Info("received join request", "node", joinRequest.NodeID, "raft_addr", joinRequest.RaftAddr, "http_addr", joinRequest.HTTPAddr, "advertise_addr", joinRequest.RaftAdvertiseAddr)
 
-	if s.raft.State() != raft.Leader {
+	if s.raft.GetState() != raft.Leader {
 		// Forward to leader if we're not the leader
 		leaderHTTP, err := s.GetLeaderHTTPAddr()
 		if err != nil {
+			logging.Error("failed to get leader address", "error", err)
 			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": fmt.Sprintf("failed to get leader address: %v", err)})
 		}
 
-		url := fmt.Sprintf("http://%s/join", leaderHTTP)
-		logging.Info("forwarding join request to leader", "url", url)
+		urlStr := fmt.Sprintf("http://%s/join", leaderHTTP)
+		logging.Info("forwarding join request to leader", "urlStr", urlStr)
 
 		// Forward the original request body
 		reqBody, err := json.Marshal(joinRequest)
@@ -173,7 +171,7 @@ func (s *Server) handleJoin(c echo.Context) error {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to marshal join request: %v", err)})
 		}
 
-		req, err := http.NewRequest("POST", url, bytes.NewReader(reqBody))
+		req, err := http.NewRequest("POST", urlStr, bytes.NewReader(reqBody))
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to create request: %v", err)})
 		}
@@ -199,12 +197,6 @@ func (s *Server) handleJoin(c echo.Context) error {
 	}
 
 	logging.Info("adding voter to cluster", "node", joinRequest.NodeID, "address", raftAddr)
-	// Add voter configuration
-	future := s.raft.AddVoter(raft.ServerID(joinRequest.NodeID), raft.ServerAddress(raftAddr), 0, 0)
-	if err := future.Error(); err != nil {
-		logging.Error("failed to add voter", "error", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to add voter: %v", err)})
-	}
 
 	// Store membership information
 	entry := &storage.MembershipEntry{
@@ -214,10 +206,39 @@ func (s *Server) handleJoin(c echo.Context) error {
 		LastUpdated: time.Now().Unix(),
 	}
 
-	if err := s.membership.PutMembership(nil, entry); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to store membership: %v", err)})
+	// Add the server to the configuration
+	logging.Info("adding voter to cluster", "node", joinRequest.NodeID, "address", raftAddr)
+	addFuture := s.raft.AddVoter(raft.ServerID(joinRequest.NodeID), raft.ServerAddress(raftAddr), 0, 0)
+	if err := addFuture.Error(); err != nil {
+		logging.Error("failed to add voter", "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to add voter: %v", err)})
 	}
 
+	// Create command
+	cmd := struct {
+		Type  string `json:"type"`
+		Key   string `json:"key"`
+		Value []byte `json:"value"`
+	}{
+		Type: "membership",
+		Key:  joinRequest.NodeID,
+	}
+
+	// Marshal the membership entry
+	value, err := json.Marshal(entry)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to marshal membership entry: %v", err)})
+	}
+	cmd.Value = value
+
+	// Apply via Raft
+	logging.Info("adding membership entry", "node", joinRequest.NodeID, "address", raftAddr)
+	if err := s.raft.Apply(cmd, 5*time.Second); err != nil {
+		logging.Error("failed to apply membership update", "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to apply membership update: %v", err)})
+	}
+
+	logging.Info("successfully added voter to cluster", "node", joinRequest.NodeID)
 	return c.JSON(http.StatusOK, map[string]string{"status": "joined"})
 }
 
@@ -230,9 +251,10 @@ func (s *Server) handlePut(c echo.Context) error {
 	key := c.Param("key")
 
 	// If not leader, forward to leader immediately
-	if s.raft.State() != raft.Leader {
+	if s.raft.GetState() != raft.Leader {
 		leaderHTTP, err := s.GetLeaderHTTPAddr()
 		if err != nil {
+			logging.Error("failed to get leader address", "error", err)
 			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": fmt.Sprintf("failed to get leader address: %v", err)})
 		}
 
@@ -275,23 +297,10 @@ func (s *Server) handlePut(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
 
-	// Validate expression if present
-	if flagData.Expression != "" {
-		// Use the rules engine to validate the expression
-		if _, err := s.rules.Compile(flagData.Expression); err != nil {
-			if compErr, ok := err.(*rules.CompilationError); ok {
-				return c.JSON(http.StatusBadRequest, map[string]interface{}{
-					"error": "invalid expression",
-					"details": map[string]interface{}{
-						"expression": compErr.Expression,
-						"issues":     compErr.Issues,
-					},
-				})
-			}
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-		// Clear any cached program for this key
-		s.cache.Delete(fmt.Sprintf("%s/%s", store, key))
+	// Convert flagData to JSON for storage
+	value, err := json.Marshal(flagData)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to marshal data"})
 	}
 
 	// Create command
@@ -300,33 +309,19 @@ func (s *Server) handlePut(c echo.Context) error {
 		Key   string `json:"key"`
 		Value []byte `json:"value"`
 	}{
-		Type: "flag",
-		Key:  fmt.Sprintf("%s/%s", store, key),
+		Type:  "put",
+		Key:   fmt.Sprintf("%s/%s", store, key),
+		Value: value,
 	}
-
-	// Convert flagData to JSON for storage
-	value, err := json.Marshal(flagData)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to marshal data"})
-	}
-	cmd.Value = value
-
-	// Convert command to JSON
-	cmdBytes, err := json.Marshal(cmd)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to marshal command"})
-	}
-
-	logging.Info("storing flag data via Raft")
 
 	// Apply via Raft
-	future := s.raft.Apply(cmdBytes, 5*time.Second)
-	if err := future.Error(); err != nil {
-		logging.Error("failed to apply change", "error", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to apply change"})
+	logging.Debug("storing flag via Raft", "key", cmd.Key, "value", string(cmd.Value))
+	if err := s.raft.Apply(cmd, 5*time.Second); err != nil {
+		logging.Error("failed to apply put", "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to apply put"})
 	}
-	logging.Info("applied flag data PUT")
-	return c.JSON(http.StatusOK, flagData)
+	logging.Info("successfully added flag via Put", "key", key)
+	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // handleGet handles GET requests for feature flags
@@ -337,142 +332,119 @@ func (s *Server) handleGet(c echo.Context) error {
 	}
 	key := c.Param("key")
 
-	// Get context values from query parameters
-	context := make(map[string]interface{})
-	for k, v := range c.QueryParams() {
-		if len(v) > 0 {
-			context[k] = v[0]
-		}
-	}
-
-	// Create request context
-	request := map[string]interface{}{
-		"ip": getClientIP(c),
-		"headers": func() map[string]interface{} {
-			headers := make(map[string]interface{})
-			for k, v := range c.Request().Header {
-				if len(v) > 0 {
-					headers[k] = v[0]
-				}
-			}
-			return headers
-		}(),
-	}
-
-	// Parse user agent for device info
-	ua := useragent.New(c.Request().UserAgent())
-	browserName, browserVersion := ua.Browser()
-	device := map[string]interface{}{
-		"mobile": ua.Mobile(),
-		"bot":    ua.Bot(),
-		"os":     ua.OS(),
-		"browser": map[string]interface{}{
-			"name":    browserName,
-			"version": browserVersion,
-		},
-	}
-
-	// Read from storage
-	value, err := s.store.Get(nil, fmt.Sprintf("%s/%s", store, key))
+	// Get the flag value
+	value, err := s.store.Get(context.Background(), fmt.Sprintf("%s/%s", store, key))
 	if err != nil {
-		if err == storage.ErrKeyNotFound {
-			return c.JSON(http.StatusNotFound, map[string]string{"error": "key not found"})
+		if errors.Is(err, storage.ErrKeyNotFound) {
+			return echo.NewHTTPError(http.StatusNotFound, "flag not found")
 		}
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to get flag: %v", err))
 	}
 
-	// Parse the stored value
+	// Parse the flag data
 	var flagData struct {
 		Value      interface{} `json:"value"`
 		Expression string      `json:"expression,omitempty"`
 	}
 	if err := json.Unmarshal(value, &flagData); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "invalid flag data"})
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to parse flag data: %v", err))
 	}
 
-	// If there's no expression, return the raw value
+	// If there's no expression, return the value directly
 	if flagData.Expression == "" {
 		return c.JSON(http.StatusOK, flagData.Value)
 	}
 
-	// Try to get compiled program from cache
-	cacheKey := fmt.Sprintf("%s/%s", store, key)
-	var program *rules.Program
-	if cached, ok := s.cache.Get(cacheKey); ok {
-		program = cached
-	} else {
-		// Compile and cache the program
+	// Get the user agent and IP
+	ua := useragent.New(c.Request().UserAgent())
+	ip := getClientIP(c.Request())
+
+	// Create context for evaluation
+	ctx := &rules.Context{
+		Key:     key,
+		Context: map[string]interface{}{
+			// No IP here, only query parameters
+		},
+		Request: map[string]interface{}{
+			"ip": ip,
+		},
+		Device: map[string]interface{}{
+			"mobile": ua.Mobile(),
+			"bot":    ua.Bot(),
+			"browser": func() map[string]interface{} {
+				name, version := ua.Browser()
+				return map[string]interface{}{
+					"name":    name,
+					"version": version,
+				}
+			}(),
+			"os": map[string]interface{}{
+				"name": ua.OS(),
+			},
+		},
+		Time: time.Now(),
+	}
+
+	// Add query parameters to context
+	for k, v := range c.QueryParams() {
+		if len(v) > 0 {
+			ctx.Context[k] = v[0]
+		}
+	}
+
+	// Get or compile the program
+	program, ok := s.cache.Get(fmt.Sprintf("%s/%s", store, key))
+	if !ok {
 		var err error
 		program, err = s.rules.Compile(flagData.Expression)
 		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "invalid expression"})
+			return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to compile expression: %v", err))
 		}
-		s.cache.Set(cacheKey, program)
+		s.cache.Set(fmt.Sprintf("%s/%s", store, key), program)
 	}
 
-	// Create evaluation context
-	ctx := &rules.Context{
-		Key:     key,
-		Context: context,
-		Request: request,
-		Device:  device,
-		Time:    time.Now(),
-	}
-
-	// Evaluate the rule
+	// Evaluate the expression
 	result, err := s.rules.Evaluate(program, ctx)
 	if err != nil {
-		logging.Error("failed to evaluate expression",
-			"error", err,
-			"expression", flagData.Expression,
-			"context", ctx,
-		)
-
-		if evalErr, ok := err.(*rules.EvaluationError); ok {
-			return c.JSON(http.StatusInternalServerError, map[string]interface{}{
-				"error": "failed to evaluate expression",
-				"details": map[string]interface{}{
-					"expression": flagData.Expression,
-					"error":      evalErr.Error(),
-				},
-			})
-		}
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to evaluate expression: %v", err))
 	}
 
-	// Return the raw result
 	return c.JSON(http.StatusOK, result)
 }
 
-// validateStoreName checks if a store name is valid
+// handleStatus returns the current node's status
+func (s *Server) handleStatus(c echo.Context) error {
+	state := s.raft.GetState()
+	return c.JSON(http.StatusOK, map[string]string{
+		"state": state.String(),
+	})
+}
+
+// validateStoreName validates a store name
 func validateStoreName(store string) error {
 	if store == "" {
 		return fmt.Errorf("store name cannot be empty")
 	}
 	if strings.HasPrefix(store, "__") {
-		return fmt.Errorf("store name cannot start with '__'")
+		return fmt.Errorf("store name cannot start with __")
 	}
 	return nil
 }
 
-// getClientIP returns the real client IP address, handling X-Forwarded-For header
-func getClientIP(c echo.Context) string {
-	// First try X-Forwarded-For header
-	forwarded := c.Request().Header.Get("X-Forwarded-For")
-	if forwarded != "" {
-		// X-Forwarded-For can contain multiple IPs, the first one is the client
-		ips := strings.Split(forwarded, ",")
-		if len(ips) > 0 {
-			return strings.TrimSpace(ips[0])
-		}
+// getClientIP returns the client's IP address
+func getClientIP(r *http.Request) string {
+	// Try X-Forwarded-For header first
+	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+		return ip
 	}
-
-	// Then try X-Real-IP header
-	realIP := c.Request().Header.Get("X-Real-IP")
-	if realIP != "" {
-		return realIP
+	// Try X-Real-IP header next
+	if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		return ip
 	}
-
-	// Fall back to the direct connection IP
-	return c.RealIP()
+	// Fall back to RemoteAddr
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return ip
 }
