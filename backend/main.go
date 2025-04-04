@@ -18,7 +18,6 @@ func main() {
 	logging.Init(slog.LevelInfo)
 
 	// Parse command line flags
-
 	config := &config.ServerConfig{}
 
 	flag.StringVar(&config.Node.ID, "node-id", "", "Node ID for this server")
@@ -30,6 +29,8 @@ func main() {
 	flag.StringVar(&config.Raft.JoinAddress, "join", "", "Address of leader node to join")
 	flag.BoolVar(&config.Features.PreWarmRules, "pre-warm", false, "Pre-warm the CEL cache on startup")
 	flag.DurationVar(&config.Raft.JoinTimeout, "join-timeout", 10*time.Second, "Timeout for join and leader election operations")
+	flag.StringVar(&config.Storage.FeatureFlags, "feature-flags-dir", "data/feature_flags", "Directory for feature flag storage")
+	flag.StringVar(&config.Storage.Membership, "membership-dir", "data/membership", "Directory for membership storage")
 	flag.Parse()
 
 	if err := config.Validate(); err != nil {
@@ -38,9 +39,16 @@ func main() {
 	}
 
 	// Ensure data directories exist
-	// TODO: This should be done in the server constructor
 	if err := os.MkdirAll(config.Raft.Directory, 0755); err != nil {
-		logging.Error("failed to create data directory", "error", err)
+		logging.Error("failed to create raft directory", "error", err)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(config.Storage.FeatureFlags, 0755); err != nil {
+		logging.Error("failed to create feature flags directory", "error", err)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(config.Storage.Membership, 0755); err != nil {
+		logging.Error("failed to create membership directory", "error", err)
 		os.Exit(1)
 	}
 

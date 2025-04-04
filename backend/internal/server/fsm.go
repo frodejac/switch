@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/dgraph-io/badger/v4"
 	"github.com/hashicorp/raft"
 
 	"github.com/frodejac/switch/internal/logging"
+	"github.com/frodejac/switch/internal/storage"
 )
 
 // fsm implements raft.FSM interface
@@ -31,21 +31,19 @@ func (f *fsm) Apply(log *raft.Log) interface{} {
 	case "membership":
 		logging.Debug("storing membership data", "data", string(log.Data))
 		// Update membership register
-		return f.store.Update(func(txn *badger.Txn) error {
-			return txn.Set(membershipKey(cmd.Key), cmd.Value)
-		})
+		entry := &storage.MembershipEntry{}
+		if err := json.Unmarshal(cmd.Value, entry); err != nil {
+			return fmt.Errorf("failed to unmarshal membership entry: %v", err)
+		}
+		return f.membership.PutMembership(nil, entry)
 	case "flag":
 		// Handle flag updates
 		logging.Debug("handling flag data", "data", string(log.Data))
-		return f.store.Update(func(txn *badger.Txn) error {
-			return txn.Set([]byte(cmd.Key), cmd.Value)
-		})
+		return f.store.Put(nil, cmd.Key, cmd.Value)
 	case "delete":
 		// Handle flag deletion
 		logging.Debug("deleting flag", "key", cmd.Key)
-		return f.store.Update(func(txn *badger.Txn) error {
-			return txn.Delete([]byte(cmd.Key))
-		})
+		return f.store.Delete(nil, cmd.Key)
 	default:
 		logging.Warn("unknown command type", "type", cmd.Type)
 		return fmt.Errorf("unknown command type: %s", cmd.Type)
@@ -61,29 +59,15 @@ func (f *fsm) Snapshot() (raft.FSMSnapshot, error) {
 func (f *fsm) Restore(rc io.ReadCloser) error {
 	defer rc.Close()
 
-	// Clear existing data
-	err := f.store.DropAll()
+	// Create a temporary snapshot
+	snapshot, err := f.store.CreateSnapshot()
 	if err != nil {
-		return fmt.Errorf("failed to clear store: %v", err)
+		return fmt.Errorf("failed to create temporary snapshot: %v", err)
 	}
 
-	decoder := json.NewDecoder(rc)
-	for decoder.More() {
-		var entry struct {
-			Key   string          `json:"key"`
-			Value json.RawMessage `json:"value"`
-		}
-		if err := decoder.Decode(&entry); err != nil {
-			return fmt.Errorf("failed to decode entry: %v", err)
-		}
-
-		// Write to BadgerDB
-		err := f.store.Update(func(txn *badger.Txn) error {
-			return txn.Set([]byte(entry.Key), []byte(entry.Value))
-		})
-		if err != nil {
-			return fmt.Errorf("failed to restore entry: %v", err)
-		}
+	// Restore from the snapshot
+	if err := f.store.RestoreSnapshot(snapshot); err != nil {
+		return fmt.Errorf("failed to restore snapshot: %v", err)
 	}
 
 	return nil
@@ -91,46 +75,35 @@ func (f *fsm) Restore(rc io.ReadCloser) error {
 
 // fsmSnapshot implements the raft.FSMSnapshot interface
 type fsmSnapshot struct {
-	store *badger.DB
+	store storage.Store
 }
 
 // Persist writes the snapshot to the given sink
 func (f *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
 	defer sink.Close()
 
-	// Stream all key-value pairs
-	err := f.store.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		encoder := json.NewEncoder(sink)
-		for it.Rewind(); it.Valid(); it.Next() {
-			item := it.Item()
-			key := item.Key()
-			value, err := item.ValueCopy(nil)
-			if err != nil {
-				return err
-			}
-
-			entry := struct {
-				Key   string          `json:"key"`
-				Value json.RawMessage `json:"value"`
-			}{
-				Key:   string(key),
-				Value: value,
-			}
-
-			if err := encoder.Encode(entry); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-
+	// Get all key-value pairs from the snapshot
+	values, err := f.store.ListWithValues(nil, "")
 	if err != nil {
 		sink.Cancel()
-		return fmt.Errorf("failed to write snapshot: %v", err)
+		return fmt.Errorf("failed to get values from snapshot: %v", err)
+	}
+
+	// Write all key-value pairs to the sink
+	encoder := json.NewEncoder(sink)
+	for key, value := range values {
+		entry := struct {
+			Key   string          `json:"key"`
+			Value json.RawMessage `json:"value"`
+		}{
+			Key:   key,
+			Value: value,
+		}
+
+		if err := encoder.Encode(entry); err != nil {
+			sink.Cancel()
+			return fmt.Errorf("failed to encode entry: %v", err)
+		}
 	}
 
 	return nil

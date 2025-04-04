@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/frodejac/switch/internal/logging"
+	"github.com/frodejac/switch/internal/storage"
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
 )
@@ -92,7 +93,7 @@ func (s *Server) setupRaft() error {
 		}
 
 		// Store bootstrap node's membership information via Raft
-		entry := MembershipEntry{
+		entry := &storage.MembershipEntry{
 			NodeID:      s.config.Node.ID,
 			RaftAddr:    s.config.Raft.Address,
 			HTTPAddr:    s.config.HTTP.Address,

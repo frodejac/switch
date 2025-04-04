@@ -50,7 +50,7 @@ func (b *Builder) WithBootstrap(bootstrap bool) *Builder {
 
 // WithPreWarm sets whether to pre-warm the CEL cache
 func (b *Builder) WithPreWarm(preWarm bool) *Builder {
-	b.config.Node.PreWarm = preWarm
+	b.config.Features.PreWarmRules = preWarm
 	return b
 }
 

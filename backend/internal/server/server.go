@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 
-	"github.com/dgraph-io/badger/v4"
 	"github.com/hashicorp/raft"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -15,47 +13,18 @@ import (
 	"github.com/frodejac/switch/internal/config"
 	"github.com/frodejac/switch/internal/logging"
 	"github.com/frodejac/switch/internal/rules"
+	"github.com/frodejac/switch/internal/storage"
 )
 
 // Server represents our feature flag server
 type Server struct {
 	config     *config.ServerConfig
-	store      *badger.DB
+	store      storage.Store
+	membership storage.MembershipStore
 	raft       *raft.Raft
 	httpServer *echo.Echo
 	rules      *rules.Engine
 	cache      *rules.Cache
-}
-
-// MembershipEntry represents a node's metadata in the membership register
-type MembershipEntry struct {
-	NodeID      string `json:"node_id"`
-	RaftAddr    string `json:"raft_addr"`
-	HTTPAddr    string `json:"http_addr"`
-	LastUpdated int64  `json:"last_updated"`
-}
-
-// membershipKey returns the BadgerDB key for a node's membership entry
-func membershipKey(nodeID string) []byte {
-	return []byte(fmt.Sprintf("__membership/%s", nodeID))
-}
-
-// GetMembership returns the membership information for a node
-func (s *Server) GetMembership(nodeID string) (*MembershipEntry, error) {
-	var entry MembershipEntry
-	err := s.store.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(membershipKey(nodeID))
-		if err != nil {
-			return err
-		}
-		return item.Value(func(val []byte) error {
-			return json.Unmarshal(val, &entry)
-		})
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &entry, nil
 }
 
 // GetLeaderHTTPAddr returns the HTTP address of the current leader
@@ -68,7 +37,7 @@ func (s *Server) GetLeaderHTTPAddr() (string, error) {
 	logging.Info("fetching leader membership data", "leader", leaderID)
 
 	// Get membership information for the leader
-	membership, err := s.GetMembership(string(leaderID))
+	membership, err := s.membership.GetMembership(nil, string(leaderID))
 	if err != nil {
 		return "", fmt.Errorf("failed to get leader membership: %v", err)
 	}
@@ -82,18 +51,26 @@ func NewServer(config *config.ServerConfig) (*Server, error) {
 		config: config,
 	}
 
-	// Initialize BadgerDB
-	opts := badger.DefaultOptions(filepath.Join(config.Raft.Directory, "badger"))
-	opts.Logger = logging.NewBadgerLogger(logging.Logger)
-	store, err := badger.Open(opts)
+	// Initialize feature flag store
+	store, err := storage.NewBadgerStore(config.Storage.FeatureFlags)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open badger store: %v", err)
+		return nil, fmt.Errorf("failed to create feature flag store: %v", err)
 	}
 	s.store = store
+
+	// Initialize membership store
+	membershipStore, err := storage.NewBadgerMembershipStore(config.Storage.Membership)
+	if err != nil {
+		store.Close()
+		return nil, fmt.Errorf("failed to create membership store: %v", err)
+	}
+	s.membership = membershipStore
 
 	// Initialize rules engine
 	engine, err := rules.NewEngine()
 	if err != nil {
+		store.Close()
+		membershipStore.Close()
 		return nil, fmt.Errorf("failed to create rules engine: %v", err)
 	}
 	s.rules = engine
@@ -142,43 +119,36 @@ func (s *Server) Start() error {
 
 // preWarmCache loads all flags and pre-compiles their CEL expressions
 func (s *Server) preWarmCache() error {
-	return s.store.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		it := txn.NewIterator(opts)
-		defer it.Close()
+	values, err := s.store.ListWithValues(nil, "")
+	if err != nil {
+		return err
+	}
 
-		for it.Rewind(); it.Valid(); it.Next() {
-			item := it.Item()
-			value, err := item.ValueCopy(nil)
-			if err != nil {
-				return err
-			}
-
-			var flagData struct {
-				Value      interface{} `json:"value"`
-				Expression string      `json:"expression,omitempty"`
-			}
-			if err := json.Unmarshal(value, &flagData); err != nil {
-				continue // Skip invalid entries
-			}
-
-			// Skip if no expression
-			if flagData.Expression == "" {
-				continue
-			}
-
-			// Compile and cache the program
-			program, err := s.rules.Compile(flagData.Expression)
-			if err != nil {
-				continue // Skip invalid expressions
-			}
-
-			// Store in cache
-			s.cache.Set(string(item.Key()), program)
+	for key, value := range values {
+		var flagData struct {
+			Value      interface{} `json:"value"`
+			Expression string      `json:"expression,omitempty"`
+		}
+		if err := json.Unmarshal(value, &flagData); err != nil {
+			continue // Skip invalid entries
 		}
 
-		return nil
-	})
+		// Skip if no expression
+		if flagData.Expression == "" {
+			continue
+		}
+
+		// Compile and cache the program
+		program, err := s.rules.Compile(flagData.Expression)
+		if err != nil {
+			continue // Skip invalid expressions
+		}
+
+		// Store in cache
+		s.cache.Set(key, program)
+	}
+
+	return nil
 }
 
 // Stop gracefully stops the server
@@ -193,7 +163,13 @@ func (s *Server) Stop() error {
 
 	if s.store != nil {
 		if err := s.store.Close(); err != nil {
-			return fmt.Errorf("failed to close badger store: %v", err)
+			return fmt.Errorf("failed to close feature flag store: %v", err)
+		}
+	}
+
+	if s.membership != nil {
+		if err := s.membership.Close(); err != nil {
+			return fmt.Errorf("failed to close membership store: %v", err)
 		}
 	}
 

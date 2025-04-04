@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 )
 
 func TestConfigValidation(t *testing.T) {
@@ -13,9 +14,20 @@ func TestConfigValidation(t *testing.T) {
 		{
 			name: "valid config",
 			config: &ServerConfig{
-				Node: NodeConfig{ID: "node1"},
-				HTTP: HTTPConfig{Address: ":8080"},
-				Raft: RaftConfig{
+				Node: struct {
+					ID string `json:"id"`
+				}{ID: "node1"},
+				HTTP: struct {
+					Address string `json:"address"`
+				}{Address: ":8080"},
+				Raft: struct {
+					Address       string        `json:"address"`
+					AdvertiseAddr string        `json:"advertise_addr"`
+					Directory     string        `json:"directory"`
+					Bootstrap     bool          `json:"bootstrap"`
+					JoinAddress   string        `json:"join_address"`
+					JoinTimeout   time.Duration `json:"join_timeout"`
+				}{
 					Address:   ":8081",
 					Directory: "/tmp/raft",
 				},
@@ -25,8 +37,17 @@ func TestConfigValidation(t *testing.T) {
 		{
 			name: "missing node ID",
 			config: &ServerConfig{
-				HTTP: HTTPConfig{Address: ":8080"},
-				Raft: RaftConfig{
+				HTTP: struct {
+					Address string `json:"address"`
+				}{Address: ":8080"},
+				Raft: struct {
+					Address       string        `json:"address"`
+					AdvertiseAddr string        `json:"advertise_addr"`
+					Directory     string        `json:"directory"`
+					Bootstrap     bool          `json:"bootstrap"`
+					JoinAddress   string        `json:"join_address"`
+					JoinTimeout   time.Duration `json:"join_timeout"`
+				}{
 					Address:   ":8081",
 					Directory: "/tmp/raft",
 				},

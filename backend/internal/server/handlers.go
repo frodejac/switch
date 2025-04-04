@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dgraph-io/badger/v4"
 	"github.com/frodejac/switch/internal/logging"
 	"github.com/frodejac/switch/internal/rules"
+	"github.com/frodejac/switch/internal/storage"
 	"github.com/hashicorp/raft"
 	"github.com/labstack/echo/v4"
 	"github.com/mssola/useragent"
@@ -92,29 +92,21 @@ func (s *Server) handleDelete(c echo.Context) error {
 
 // handleListStores returns all available stores
 func (s *Server) handleListStores(c echo.Context) error {
-	stores := make(map[string]bool)
-	err := s.store.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		for it.Rewind(); it.Valid(); it.Next() {
-			item := it.Item()
-			key := string(item.Key())
-			// Extract store name from key (format: "store/key")
-			if parts := strings.Split(key, "/"); len(parts) > 1 {
-				store := parts[0]
-				// Skip private stores (starting with __)
-				if !strings.HasPrefix(store, "__") {
-					stores[store] = true
-				}
-			}
-		}
-		return nil
-	})
-
+	keys, err := s.store.List(nil, "")
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to list stores: %v", err))
+	}
+
+	stores := make(map[string]bool)
+	for _, key := range keys {
+		// Extract store name from key (format: "store/key")
+		if parts := strings.Split(key, "/"); len(parts) > 1 {
+			store := parts[0]
+			// Skip private stores (starting with __)
+			if !strings.HasPrefix(store, "__") {
+				stores[store] = true
+			}
+		}
 	}
 
 	// Convert map to slice
@@ -133,33 +125,18 @@ func (s *Server) handleList(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
-	flags := make(map[string]interface{})
-	err := s.store.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		prefix := []byte(store + "/")
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			item := it.Item()
-			key := string(item.Key())
-			err := item.Value(func(val []byte) error {
-				var value interface{}
-				if err := json.Unmarshal(val, &value); err != nil {
-					return err
-				}
-				flags[key] = value
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-
+	values, err := s.store.ListWithValues(nil, store+"/")
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to list flags: %v", err))
+	}
+
+	flags := make(map[string]interface{})
+	for key, value := range values {
+		var flagValue interface{}
+		if err := json.Unmarshal(value, &flagValue); err != nil {
+			continue // Skip invalid entries
+		}
+		flags[key] = flagValue
 	}
 
 	return c.JSON(http.StatusOK, flags)
@@ -230,43 +207,17 @@ func (s *Server) handleJoin(c echo.Context) error {
 	}
 
 	// Store membership information
-	entry := MembershipEntry{
+	entry := &storage.MembershipEntry{
 		NodeID:      joinRequest.NodeID,
 		RaftAddr:    raftAddr,
 		HTTPAddr:    joinRequest.HTTPAddr,
 		LastUpdated: time.Now().Unix(),
 	}
 
-	value, err := json.Marshal(entry)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to marshal membership entry: %v", err)})
+	if err := s.membership.PutMembership(nil, entry); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to store membership: %v", err)})
 	}
 
-	// Create command
-	cmd := struct {
-		Type  string `json:"type"`
-		Key   string `json:"key"`
-		Value []byte `json:"value"`
-	}{
-		Type:  "membership",
-		Key:   joinRequest.NodeID,
-		Value: value,
-	}
-
-	// Convert to JSON
-	cmdBytes, err := json.Marshal(cmd)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to marshal command: %v", err)})
-	}
-
-	logging.Debug("storing membership data", "data", string(cmdBytes))
-	// Apply via Raft
-	future = s.raft.Apply(cmdBytes, 5*time.Second)
-	if err := future.Error(); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to apply membership update: %v", err)})
-	}
-
-	logging.Info("successfully added voter to cluster", "node", joinRequest.NodeID)
 	return c.JSON(http.StatusOK, map[string]string{"status": "joined"})
 }
 
@@ -421,20 +372,12 @@ func (s *Server) handleGet(c echo.Context) error {
 		},
 	}
 
-	// Read from BadgerDB
-	var value []byte
-	err := s.store.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(fmt.Sprintf("%s/%s", store, key)))
-		if err != nil {
-			return err
+	// Read from storage
+	value, err := s.store.Get(nil, fmt.Sprintf("%s/%s", store, key))
+	if err != nil {
+		if err == storage.ErrKeyNotFound {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "key not found"})
 		}
-		value, err = item.ValueCopy(nil)
-		return err
-	})
-
-	if err == badger.ErrKeyNotFound {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "key not found"})
-	} else if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
