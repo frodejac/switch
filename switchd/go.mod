@@ -3,6 +3,7 @@ module github.com/frodejac/switch/switchd
 go 1.24.0
 
 require (
+	github.com/caarlos0/env/v11 v11.0.1
 	github.com/dgraph-io/badger/v4 v4.2.0
 	github.com/google/cel-go v0.24.0
 	github.com/hashicorp/go-hclog v1.6.2
@@ -10,6 +11,7 @@ require (
 	github.com/hashicorp/raft-boltdb v0.0.0-20231211162105-6c830fa4535e
 	github.com/labstack/echo/v4 v4.11.4
 	github.com/labstack/gommon v0.4.2
+	github.com/mssola/useragent v1.0.0
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/protobuf v1.34.2
 )
@@ -38,7 +40,6 @@ require (
 	github.com/klauspost/compress v1.12.3 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/mssola/useragent v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/stoewer/go-strcase v1.2.0 // indirect

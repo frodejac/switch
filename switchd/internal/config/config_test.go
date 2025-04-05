@@ -2,7 +2,6 @@ package config
 
 import (
 	"testing"
-	"time"
 )
 
 func TestConfigValidation(t *testing.T) {
@@ -14,20 +13,13 @@ func TestConfigValidation(t *testing.T) {
 		{
 			name: "valid config",
 			config: &ServerConfig{
-				Node: struct {
-					ID string `json:"id"`
-				}{ID: "node1"},
-				HTTP: struct {
-					Address string `json:"address"`
-				}{Address: ":8080"},
-				Raft: struct {
-					Address       string        `json:"address"`
-					AdvertiseAddr string        `json:"advertise_addr"`
-					Directory     string        `json:"directory"`
-					Bootstrap     bool          `json:"bootstrap"`
-					JoinAddress   string        `json:"join_address"`
-					JoinTimeout   time.Duration `json:"join_timeout"`
-				}{
+				Node: NodeConfig{
+					ID: "node1",
+				},
+				HTTP: HTTPConfig{
+					Address: ":8080",
+				},
+				Raft: RaftConfig{
 					Address:   ":8081",
 					Directory: "/tmp/raft",
 				},
@@ -37,17 +29,10 @@ func TestConfigValidation(t *testing.T) {
 		{
 			name: "missing node ID",
 			config: &ServerConfig{
-				HTTP: struct {
-					Address string `json:"address"`
-				}{Address: ":8080"},
-				Raft: struct {
-					Address       string        `json:"address"`
-					AdvertiseAddr string        `json:"advertise_addr"`
-					Directory     string        `json:"directory"`
-					Bootstrap     bool          `json:"bootstrap"`
-					JoinAddress   string        `json:"join_address"`
-					JoinTimeout   time.Duration `json:"join_timeout"`
-				}{
+				HTTP: HTTPConfig{
+					Address: ":8080",
+				},
+				Raft: RaftConfig{
 					Address:   ":8081",
 					Directory: "/tmp/raft",
 				},
@@ -65,23 +50,4 @@ func TestConfigValidation(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestBuilder(t *testing.T) {
-	config, err := NewBuilder().
-		WithNodeID("node1").
-		WithHTTPAddress(":8080").
-		WithRaftAddress(":8081").
-		WithRaftDirectory("/tmp/raft").
-		WithBootstrap(true).
-		Build()
-
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if config.Node.ID != "node1" {
-		t.Errorf("expected node ID 'node1', got %s", config.Node.ID)
-	}
-	// Add more assertions
 }

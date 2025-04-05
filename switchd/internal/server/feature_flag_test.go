@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -21,18 +22,19 @@ func TestFeatureFlagE2E(t *testing.T) {
 	// Initialize logger
 	logging.Init(slog.LevelDebug)
 
-	// Start the server
-	config, err := config.NewBuilder().
-		WithNodeID("test-node").
-		WithHTTPAddress("localhost:8080").
-		WithRaftAddress("localhost:8081").
-		WithRaftDirectory(t.TempDir()).
-		WithBootstrap(true).
-		WithPreWarm(true).
-		Build()
+	// Set up environment variables for testing
+	os.Setenv("NODE_ID", "test-node")
+	os.Setenv("HTTP_ADDRESS", "localhost:8080")
+	os.Setenv("RAFT_ADDRESS", "localhost:8081")
+	os.Setenv("RAFT_DIRECTORY", t.TempDir())
+	os.Setenv("RAFT_BOOTSTRAP", "true")
+	os.Setenv("FEATURES_PRE_WARM_RULES", "true")
+
+	// Load configuration
+	cfg, err := config.Load()
 	require.NoError(t, err)
 
-	srv, err := server.NewServer(config)
+	srv, err := server.NewServer(cfg)
 	require.NoError(t, err)
 
 	// Start the server in a goroutine
@@ -47,7 +49,7 @@ func TestFeatureFlagE2E(t *testing.T) {
 	timeout := time.After(5 * time.Second)
 	for {
 		// Try to connect to the HTTP server
-		_, err := http.Get(fmt.Sprintf("http://%s/stores", config.HTTP.Address))
+		_, err := http.Get(fmt.Sprintf("http://%s/stores", cfg.HTTP.Address))
 		if err == nil {
 			// Server is up, now wait for it to become leader
 			if srv.GetRaftState() == raft.Leader {
@@ -80,7 +82,7 @@ func TestFeatureFlagE2E(t *testing.T) {
 
 	// Create the feature flag
 	req, err := http.NewRequest(http.MethodPut,
-		fmt.Sprintf("http://%s/%s/%s", config.HTTP.Address, store, key),
+		fmt.Sprintf("http://%s/%s/%s", cfg.HTTP.Address, store, key),
 		bytes.NewReader(mustMarshal(t, flagData)),
 	)
 	require.NoError(t, err)
@@ -91,7 +93,7 @@ func TestFeatureFlagE2E(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Test 2: Retrieve the feature flag with admin context
-	resp, err = http.Get(fmt.Sprintf("http://%s/%s/%s?user_role=admin", config.HTTP.Address, store, key))
+	resp, err = http.Get(fmt.Sprintf("http://%s/%s/%s?user_role=admin", cfg.HTTP.Address, store, key))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -101,7 +103,7 @@ func TestFeatureFlagE2E(t *testing.T) {
 	assert.Equal(t, "admin-value", result)
 
 	// Test 3: Retrieve the feature flag with user context
-	resp, err = http.Get(fmt.Sprintf("http://%s/%s/%s?user_role=user", config.HTTP.Address, store, key))
+	resp, err = http.Get(fmt.Sprintf("http://%s/%s/%s?user_role=user", cfg.HTTP.Address, store, key))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
