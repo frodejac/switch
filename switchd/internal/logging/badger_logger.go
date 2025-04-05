@@ -18,22 +18,22 @@ func NewBadgerLogger(logger *slog.Logger) *BadgerLogger {
 }
 
 // Errorf implements badger.Logger
-func (l *BadgerLogger) Errorf(format string, args ...interface{}) {
+func (l *BadgerLogger) Errorf(format string, args ...any) {
 	l.logger.Error(fmt.Sprintf(format, args...))
 }
 
 // Warningf implements badger.Logger
-func (l *BadgerLogger) Warningf(format string, args ...interface{}) {
+func (l *BadgerLogger) Warningf(format string, args ...any) {
 	l.logger.Warn(fmt.Sprintf(format, args...))
 }
 
 // Infof implements badger.Logger
-func (l *BadgerLogger) Infof(format string, args ...interface{}) {
+func (l *BadgerLogger) Infof(format string, args ...any) {
 	l.logger.Info(fmt.Sprintf(format, args...))
 }
 
 // Debugf implements badger.Logger
-func (l *BadgerLogger) Debugf(format string, args ...interface{}) {
+func (l *BadgerLogger) Debugf(format string, args ...any) {
 	l.logger.Debug(fmt.Sprintf(format, args...))
 }
 

@@ -57,7 +57,7 @@ func (e *Engine) Compile(expression string) (*Program, error) {
 	}, nil
 }
 
-func (e *Engine) Evaluate(program *Program, ctx *Context) (interface{}, error) {
+func (e *Engine) Evaluate(program *Program, ctx *Context) (any, error) {
 	// Convert context to CEL-compatible types
 	vars, err := e.prepareVars(ctx)
 	if err != nil {
@@ -83,22 +83,22 @@ func (e *Engine) Evaluate(program *Program, ctx *Context) (interface{}, error) {
 }
 
 // prepareVars converts context to CEL-compatible types
-func (e *Engine) prepareVars(ctx *Context) (map[string]interface{}, error) {
+func (e *Engine) prepareVars(ctx *Context) (map[string]any, error) {
 	// Convert context to a regular map
-	contextMap := make(map[string]interface{})
+	contextMap := make(map[string]any)
 	for k, v := range ctx.Context {
 		contextMap[k] = v
 	}
 
 	// Convert request to a regular map
-	requestMap := make(map[string]interface{})
+	requestMap := make(map[string]any)
 	for k, v := range ctx.Request {
 		// Handle nested maps
-		if nestedMap, ok := v.(map[string]interface{}); ok {
+		if nestedMap, ok := v.(map[string]any); ok {
 			requestMap[k] = nestedMap
 		} else if nestedMap, ok := v.(map[string]string); ok {
-			// Convert map[string]string to map[string]interface{}
-			interfaceMap := make(map[string]interface{})
+			// Convert map[string]string to map[string]any
+			interfaceMap := make(map[string]any)
 			for k, v := range nestedMap {
 				interfaceMap[k] = v
 			}
@@ -109,7 +109,7 @@ func (e *Engine) prepareVars(ctx *Context) (map[string]interface{}, error) {
 	}
 
 	// Convert device to a regular map
-	deviceMap := make(map[string]interface{})
+	deviceMap := make(map[string]any)
 	for k, v := range ctx.Device {
 		deviceMap[k] = v
 	}
@@ -130,7 +130,7 @@ func (e *Engine) prepareVars(ctx *Context) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to convert device: %w", err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"key":     ctx.Key,
 		"context": contextStruct,
 		"request": requestStruct,

@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/frodejac/switch/switchd/internal/logging"
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/frodejac/switch/switchd/internal/logging"
 
 	"archive/tar"
 
@@ -30,7 +31,7 @@ func NewFSM(store storage.Store, membership storage.MembershipStore) *FSM {
 }
 
 // Apply applies a Raft log entry to the FSM
-func (f *FSM) Apply(log *raft.Log) interface{} {
+func (f *FSM) Apply(log *raft.Log) any {
 	var cmd struct {
 		Type  string `json:"type"`
 		Key   string `json:"key"`

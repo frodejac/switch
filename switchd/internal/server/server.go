@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -96,6 +97,12 @@ func (s *Server) Start() error {
 		}
 	}
 
+	if s.config.Features.PreWarmRules {
+		if err := s.preWarmCache(); err != nil {
+			return fmt.Errorf("failed to pre-warm cache: %v", err)
+		}
+	}
+
 	// Start HTTP server
 	go func() {
 		if err := s.httpServer.Start(s.config.HTTP.Address); err != nil && err != http.ErrServerClosed {
@@ -109,15 +116,15 @@ func (s *Server) Start() error {
 
 // preWarmCache loads all flags and pre-compiles their CEL expressions
 func (s *Server) preWarmCache() error {
-	values, err := s.store.ListWithValues(nil, "")
+	values, err := s.store.ListWithValues(context.Background(), "")
 	if err != nil {
 		return err
 	}
 
 	for key, value := range values {
 		var flagData struct {
-			Value      interface{} `json:"value"`
-			Expression string      `json:"expression,omitempty"`
+			Value      any    `json:"value"`
+			Expression string `json:"expression,omitempty"`
 		}
 		if err := json.Unmarshal(value, &flagData); err != nil {
 			continue // Skip invalid entries

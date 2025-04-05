@@ -75,7 +75,7 @@ func TestFeatureFlagE2E(t *testing.T) {
 	// Test 1: Create a feature flag with a CEL expression
 	store := "test-store"
 	key := "test-flag"
-	flagData := map[string]interface{}{
+	flagData := map[string]any{
 		"value":      "default",
 		"expression": `context.user_role == "admin" ? "admin-value" : "user-value"`,
 	}
@@ -97,7 +97,7 @@ func TestFeatureFlagE2E(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-	var result interface{}
+	var result any
 	err = json.NewDecoder(resp.Body).Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, "admin-value", result)
@@ -112,7 +112,7 @@ func TestFeatureFlagE2E(t *testing.T) {
 	assert.Equal(t, "user-value", result)
 }
 
-func mustMarshal(t *testing.T, v interface{}) []byte {
+func mustMarshal(t *testing.T, v any) []byte {
 	data, err := json.Marshal(v)
 	require.NoError(t, err)
 	return data

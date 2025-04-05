@@ -127,9 +127,9 @@ func (s *Server) handleList(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to list flags: %v", err))
 	}
 
-	flags := make(map[string]interface{})
+	flags := make(map[string]any)
 	for key, value := range values {
-		var flagValue interface{}
+		var flagValue any
 		if err := json.Unmarshal(value, &flagValue); err != nil {
 			continue // Skip invalid entries
 		}
@@ -289,8 +289,8 @@ func (s *Server) handlePut(c echo.Context) error {
 
 	// Parse request body (only if we're the leader)
 	var flagData struct {
-		Value      interface{} `json:"value"`
-		Expression string      `json:"expression,omitempty"`
+		Value      any    `json:"value"`
+		Expression string `json:"expression,omitempty"`
 	}
 	if err := c.Bind(&flagData); err != nil {
 		logging.Error("failed to parse request body", "error", err)
@@ -343,8 +343,8 @@ func (s *Server) handleGet(c echo.Context) error {
 
 	// Parse the flag data
 	var flagData struct {
-		Value      interface{} `json:"value"`
-		Expression string      `json:"expression,omitempty"`
+		Value      any    `json:"value"`
+		Expression string `json:"expression,omitempty"`
 	}
 	if err := json.Unmarshal(value, &flagData); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to parse flag data: %v", err))
@@ -361,24 +361,22 @@ func (s *Server) handleGet(c echo.Context) error {
 
 	// Create context for evaluation
 	ctx := &rules.Context{
-		Key: key,
-		Context: map[string]interface{}{
-			// No IP here, only query parameters
-		},
-		Request: map[string]interface{}{
+		Key:     key,
+		Context: map[string]any{},
+		Request: map[string]any{
 			"ip": ip,
 		},
-		Device: map[string]interface{}{
+		Device: map[string]any{
 			"mobile": ua.Mobile(),
 			"bot":    ua.Bot(),
-			"browser": func() map[string]interface{} {
+			"browser": func() map[string]any {
 				name, version := ua.Browser()
-				return map[string]interface{}{
+				return map[string]any{
 					"name":    name,
 					"version": version,
 				}
 			}(),
-			"os": map[string]interface{}{
+			"os": map[string]any{
 				"name": ua.OS(),
 			},
 		},

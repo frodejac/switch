@@ -45,12 +45,12 @@ func (l *EchoLogger) SetLevel(v log.Lvl) {}
 func (l *EchoLogger) SetHeader(h string) {}
 
 // Print logs a message at info level
-func (l *EchoLogger) Print(i ...interface{}) {
+func (l *EchoLogger) Print(i ...any) {
 	l.logger.Info("", "message", i)
 }
 
 // Printf logs a formatted message at info level
-func (l *EchoLogger) Printf(format string, args ...interface{}) {
+func (l *EchoLogger) Printf(format string, args ...any) {
 	l.logger.Info(format, "args", args)
 }
 
@@ -60,12 +60,12 @@ func (l *EchoLogger) Printj(j log.JSON) {
 }
 
 // Debug logs a message at debug level
-func (l *EchoLogger) Debug(i ...interface{}) {
+func (l *EchoLogger) Debug(i ...any) {
 	l.logger.Debug("", "message", i)
 }
 
 // Debugf logs a formatted message at debug level
-func (l *EchoLogger) Debugf(format string, args ...interface{}) {
+func (l *EchoLogger) Debugf(format string, args ...any) {
 	l.logger.Debug(format, "args", args)
 }
 
@@ -75,12 +75,12 @@ func (l *EchoLogger) Debugj(j log.JSON) {
 }
 
 // Info logs a message at info level
-func (l *EchoLogger) Info(i ...interface{}) {
+func (l *EchoLogger) Info(i ...any) {
 	l.logger.Info("", "message", i)
 }
 
 // Infof logs a formatted message at info level
-func (l *EchoLogger) Infof(format string, args ...interface{}) {
+func (l *EchoLogger) Infof(format string, args ...any) {
 	l.logger.Info(format, "args", args)
 }
 
@@ -90,12 +90,12 @@ func (l *EchoLogger) Infoj(j log.JSON) {
 }
 
 // Warn logs a message at warn level
-func (l *EchoLogger) Warn(i ...interface{}) {
+func (l *EchoLogger) Warn(i ...any) {
 	l.logger.Warn("", "message", i)
 }
 
 // Warnf logs a formatted message at warn level
-func (l *EchoLogger) Warnf(format string, args ...interface{}) {
+func (l *EchoLogger) Warnf(format string, args ...any) {
 	l.logger.Warn(format, "args", args)
 }
 
@@ -105,12 +105,12 @@ func (l *EchoLogger) Warnj(j log.JSON) {
 }
 
 // Error logs a message at error level
-func (l *EchoLogger) Error(i ...interface{}) {
+func (l *EchoLogger) Error(i ...any) {
 	l.logger.Error("", "message", i)
 }
 
 // Errorf logs a formatted message at error level
-func (l *EchoLogger) Errorf(format string, args ...interface{}) {
+func (l *EchoLogger) Errorf(format string, args ...any) {
 	l.logger.Error(format, "args", args)
 }
 
@@ -120,12 +120,12 @@ func (l *EchoLogger) Errorj(j log.JSON) {
 }
 
 // Fatal logs a message at error level and exits
-func (l *EchoLogger) Fatal(i ...interface{}) {
+func (l *EchoLogger) Fatal(i ...any) {
 	l.logger.Error("", "message", i)
 }
 
 // Fatalf logs a formatted message at error level and exits
-func (l *EchoLogger) Fatalf(format string, args ...interface{}) {
+func (l *EchoLogger) Fatalf(format string, args ...any) {
 	l.logger.Error(format, "args", args)
 }
 
@@ -135,12 +135,12 @@ func (l *EchoLogger) Fatalj(j log.JSON) {
 }
 
 // Panic logs a message at error level and panics
-func (l *EchoLogger) Panic(i ...interface{}) {
+func (l *EchoLogger) Panic(i ...any) {
 	l.logger.Error("", "message", i)
 }
 
 // Panicf logs a formatted message at error level and panics
-func (l *EchoLogger) Panicf(format string, args ...interface{}) {
+func (l *EchoLogger) Panicf(format string, args ...any) {
 	l.logger.Error(format, "args", args)
 }
 

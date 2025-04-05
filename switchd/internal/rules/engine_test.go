@@ -56,7 +56,7 @@ func TestEngine_Evaluate(t *testing.T) {
 			expression: "request.user_id == 'abc123'",
 			context: &Context{
 				Key: "test",
-				Request: map[string]interface{}{
+				Request: map[string]any{
 					"user_id": "abc123",
 				},
 				Time: time.Now(),

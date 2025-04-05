@@ -124,7 +124,7 @@ func (s *BadgerStore) ListWithValues(ctx context.Context, prefix string) (map[st
 }
 
 // CreateSnapshot implements Store.CreateSnapshot
-func (s *BadgerStore) CreateSnapshot() (interface{}, error) {
+func (s *BadgerStore) CreateSnapshot() (any, error) {
 	// Create a temporary directory for the snapshot
 	tmpDir, err := os.MkdirTemp("", "badger-snapshot-*")
 	if err != nil {
@@ -172,7 +172,7 @@ func (s *BadgerStore) CreateSnapshot() (interface{}, error) {
 }
 
 // RestoreSnapshot implements Store.RestoreSnapshot
-func (s *BadgerStore) RestoreSnapshot(snapshot interface{}) error {
+func (s *BadgerStore) RestoreSnapshot(snapshot any) error {
 	badgerSnapshot, ok := snapshot.(*BadgerSnapshot)
 	if !ok {
 		return fmt.Errorf("invalid snapshot type")

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -51,7 +52,7 @@ func (s *Server) JoinCluster(addr string) error {
 func (s *Server) GetLeaderHTTPAddr() (string, error) {
 	leaderId := s.raft.GetLeaderId()
 	logging.Debug("got leader id", "leader_id", leaderId)
-	membership, err := s.membership.GetMembership(nil, leaderId)
+	membership, err := s.membership.GetMembership(context.Background(), leaderId)
 	if err != nil {
 		return "", fmt.Errorf("failed to get leader membership: %v", err)
 	}

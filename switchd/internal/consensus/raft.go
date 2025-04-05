@@ -285,7 +285,7 @@ func (r *RaftNode) Shutdown() error {
 }
 
 // Apply applies a command to the Raft cluster
-func (r *RaftNode) Apply(cmd interface{}, timeout time.Duration) error {
+func (r *RaftNode) Apply(cmd any, timeout time.Duration) error {
 	cmdBytes, err := json.Marshal(cmd)
 	if err != nil {
 		return fmt.Errorf("failed to marshal command: %v", err)

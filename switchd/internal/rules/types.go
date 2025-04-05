@@ -9,17 +9,17 @@ import (
 
 // Context represents the evaluation context for a rule
 type Context struct {
-	Key     string                 `json:"key"`
-	Context map[string]interface{} `json:"context"`
-	Request map[string]interface{} `json:"request"`
-	Device  map[string]interface{} `json:"device"`
-	Time    time.Time              `json:"time"`
+	Key     string         `json:"key"`
+	Context map[string]any `json:"context"`
+	Request map[string]any `json:"request"`
+	Device  map[string]any `json:"device"`
+	Time    time.Time      `json:"time"`
 }
 
 // Rule represents a feature flag rule
 type Rule struct {
-	Expression string      `json:"expression"`
-	Value      interface{} `json:"value"`
+	Expression string `json:"expression"`
+	Value      any    `json:"value"`
 }
 
 // Program represents a compiled CEL program

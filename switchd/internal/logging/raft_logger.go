@@ -20,7 +20,7 @@ func NewRaftLogger(logger *slog.Logger) *RaftLogger {
 }
 
 // Log logs a message at the specified level
-func (l *RaftLogger) Log(level hclog.Level, msg string, args ...interface{}) {
+func (l *RaftLogger) Log(level hclog.Level, msg string, args ...any) {
 	switch level {
 	case hclog.Trace:
 		l.logger.Debug(msg, args...)
@@ -36,27 +36,27 @@ func (l *RaftLogger) Log(level hclog.Level, msg string, args ...interface{}) {
 }
 
 // Trace logs a message at trace level
-func (l *RaftLogger) Trace(msg string, args ...interface{}) {
+func (l *RaftLogger) Trace(msg string, args ...any) {
 	l.Log(hclog.Trace, msg, args...)
 }
 
 // Debug logs a message at debug level
-func (l *RaftLogger) Debug(msg string, args ...interface{}) {
+func (l *RaftLogger) Debug(msg string, args ...any) {
 	l.Log(hclog.Debug, msg, args...)
 }
 
 // Info logs a message at info level
-func (l *RaftLogger) Info(msg string, args ...interface{}) {
+func (l *RaftLogger) Info(msg string, args ...any) {
 	l.Log(hclog.Info, msg, args...)
 }
 
 // Warn logs a message at warn level
-func (l *RaftLogger) Warn(msg string, args ...interface{}) {
+func (l *RaftLogger) Warn(msg string, args ...any) {
 	l.Log(hclog.Warn, msg, args...)
 }
 
 // Error logs a message at error level
-func (l *RaftLogger) Error(msg string, args ...interface{}) {
+func (l *RaftLogger) Error(msg string, args ...any) {
 	l.Log(hclog.Error, msg, args...)
 }
 
@@ -86,12 +86,12 @@ func (l *RaftLogger) IsError() bool {
 }
 
 // ImpliedArgs returns the implied args
-func (l *RaftLogger) ImpliedArgs() []interface{} {
+func (l *RaftLogger) ImpliedArgs() []any {
 	return nil
 }
 
 // With returns a new logger with additional key/value pairs
-func (l *RaftLogger) With(args ...interface{}) hclog.Logger {
+func (l *RaftLogger) With(args ...any) hclog.Logger {
 	return &RaftLogger{logger: l.logger.With(args...), name: l.name}
 }
 

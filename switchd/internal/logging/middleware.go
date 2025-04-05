@@ -64,7 +64,7 @@ func LoggerWithConfig(config LoggerConfig) echo.MiddlewareFunc {
 			latency := time.Since(start)
 
 			// Prepare log fields
-			fields := []interface{}{
+			fields := []any{
 				"time", time.Now().Format(time.RFC3339),
 				"latency", latency.String(),
 				"method", req.Method,

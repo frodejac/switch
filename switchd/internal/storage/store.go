@@ -29,16 +29,16 @@ type Store interface {
 	ListWithValues(ctx context.Context, prefix string) (map[string][]byte, error)
 
 	// CreateSnapshot creates a snapshot of the store
-	CreateSnapshot() (interface{}, error)
+	CreateSnapshot() (any, error)
 
 	// RestoreSnapshot restores the store from a snapshot
-	RestoreSnapshot(interface{}) error
+	RestoreSnapshot(any) error
 }
 
 // Snapshot represents a point-in-time snapshot of the store
 type Snapshot struct {
 	path string
-	db   interface{} // This will be *badger.DB in the BadgerDB implementation
+	db   any // This will be *badger.DB in the BadgerDB implementation
 }
 
 // MembershipEntry represents a node's metadata in the membership register
