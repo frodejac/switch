@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frodejac/switch/internal/config"
-	"github.com/frodejac/switch/internal/logging"
-	"github.com/frodejac/switch/internal/server"
+	"github.com/frodejac/switch/switchd/internal/config"
+	"github.com/frodejac/switch/switchd/internal/logging"
+	"github.com/frodejac/switch/switchd/internal/server"
 	"github.com/hashicorp/raft"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

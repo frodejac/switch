@@ -19,13 +19,13 @@ This is a monorepo containing both the backend and frontend components of the Sw
 
 The backend is a Go service that provides a distributed feature flag management system using Raft consensus. It uses BadgerDB for storage and provides a REST API for managing feature flags.
 
-See the [backend README](./backend/README.md) for more details.
+See the [backend README](switchd/README.md) for more details.
 
 ## Frontend
 
 The frontend will be a web-based UI for managing feature flags. It will communicate with the backend service via REST API.
 
-See the [frontend README](./frontend/README.md) for more details.
+See the [frontend README](switch-ui/README.md) for more details.
 
 ## Development
 

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/frodejac/switch/internal/consensus"
-	"github.com/frodejac/switch/internal/logging"
+	"github.com/frodejac/switch/switchd/internal/consensus"
+	"github.com/frodejac/switch/switchd/internal/logging"
 	"github.com/hashicorp/raft"
 )
 

@@ -1,7 +1,7 @@
 services:
   node1:
     build:
-      context: ./backend
+      context: switchd
       dockerfile: Dockerfile
     ports:
       - "9990:9990"  # HTTP API
@@ -19,7 +19,7 @@ services:
 
   node2:
     build:
-      context: ./backend
+      context: switchd
       dockerfile: Dockerfile
     ports:
       - "9992:9992"  # HTTP API
@@ -38,7 +38,7 @@ services:
 
   node3:
     build:
-      context: ./backend
+      context: switchd
       dockerfile: Dockerfile
     ports:
       - "9994:9994"  # HTTP API
@@ -57,12 +57,12 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: switch-ui
       dockerfile: Dockerfile.dev
     ports:
       - "5173:5173"
     volumes:
-      - ./frontend:/app
+      - ./switch-ui:/app
       - /app/node_modules
     environment:
       - VITE_API_URL=http://localhost:9990

@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/frodejac/switch/internal/logging"
-	"github.com/frodejac/switch/internal/rules"
-	"github.com/frodejac/switch/internal/storage"
+	"github.com/frodejac/switch/switchd/internal/logging"
+	"github.com/frodejac/switch/switchd/internal/rules"
+	"github.com/frodejac/switch/switchd/internal/storage"
 	"github.com/hashicorp/raft"
 	"github.com/labstack/echo/v4"
 	"github.com/mssola/useragent"
@@ -361,7 +361,7 @@ func (s *Server) handleGet(c echo.Context) error {
 
 	// Create context for evaluation
 	ctx := &rules.Context{
-		Key:     key,
+		Key: key,
 		Context: map[string]interface{}{
 			// No IP here, only query parameters
 		},

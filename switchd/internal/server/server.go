@@ -9,11 +9,11 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
-	"github.com/frodejac/switch/internal/config"
-	"github.com/frodejac/switch/internal/consensus"
-	"github.com/frodejac/switch/internal/logging"
-	"github.com/frodejac/switch/internal/rules"
-	"github.com/frodejac/switch/internal/storage"
+	"github.com/frodejac/switch/switchd/internal/config"
+	"github.com/frodejac/switch/switchd/internal/consensus"
+	"github.com/frodejac/switch/switchd/internal/logging"
+	"github.com/frodejac/switch/switchd/internal/rules"
+	"github.com/frodejac/switch/switchd/internal/storage"
 )
 
 // Server represents our feature flag server

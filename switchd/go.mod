@@ -1,4 +1,4 @@
-module github.com/frodejac/switch
+module github.com/frodejac/switch/switchd
 
 go 1.24.0
 

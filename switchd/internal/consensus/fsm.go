@@ -4,14 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/frodejac/switch/internal/logging"
+	"github.com/frodejac/switch/switchd/internal/logging"
 	"io"
 	"os"
 	"path/filepath"
 
 	"archive/tar"
 
-	"github.com/frodejac/switch/internal/storage"
+	"github.com/frodejac/switch/switchd/internal/storage"
 	"github.com/hashicorp/raft"
 )
 

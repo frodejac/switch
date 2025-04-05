@@ -8,9 +8,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/frodejac/switch/internal/config"
-	"github.com/frodejac/switch/internal/logging"
-	"github.com/frodejac/switch/internal/server"
+	"github.com/frodejac/switch/switchd/internal/config"
+	"github.com/frodejac/switch/switchd/internal/logging"
+	"github.com/frodejac/switch/switchd/internal/server"
 )
 
 func main() {

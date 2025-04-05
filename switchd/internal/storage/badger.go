@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/dgraph-io/badger/v4"
-	"github.com/frodejac/switch/internal/logging"
+	"github.com/frodejac/switch/switchd/internal/logging"
 )
 
 // BadgerSnapshot represents a point-in-time snapshot of a BadgerDB store

@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/frodejac/switch/internal/config"
-	"github.com/frodejac/switch/internal/logging"
-	"github.com/frodejac/switch/internal/storage"
+	"github.com/frodejac/switch/switchd/internal/config"
+	"github.com/frodejac/switch/switchd/internal/logging"
+	"github.com/frodejac/switch/switchd/internal/storage"
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
 )
