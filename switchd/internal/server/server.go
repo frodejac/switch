@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
+	"github.com/hashicorp/raft"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
+	"github.com/frodejac/switch/switchd/internal/api"
 	"github.com/frodejac/switch/switchd/internal/config"
 	"github.com/frodejac/switch/switchd/internal/consensus"
 	"github.com/frodejac/switch/switchd/internal/logging"
@@ -44,7 +47,7 @@ func NewServer(config *config.ServerConfig) (*Server, error) {
 	// Initialize membership store
 	membershipStore, err := storage.NewBadgerMembershipStore(config.Storage.Membership)
 	if err != nil {
-		store.Close()
+		s.Stop()
 		return nil, fmt.Errorf("failed to create membership store: %v", err)
 	}
 	s.membership = membershipStore
@@ -52,12 +55,39 @@ func NewServer(config *config.ServerConfig) (*Server, error) {
 	// Initialize rules engine
 	engine, err := rules.NewEngine()
 	if err != nil {
-		store.Close()
-		membershipStore.Close()
+		s.Stop()
 		return nil, fmt.Errorf("failed to create rules engine: %v", err)
 	}
 	s.rules = engine
 	s.cache = rules.NewCache()
+
+	// Initialize Raft
+	raftNode, err := consensus.NewRaftNode(s.config, s.store, s.membership)
+	if err != nil {
+		s.Stop()
+		return nil, fmt.Errorf("failed to create raft node: %v", err)
+	}
+	s.raft = raftNode
+
+	// If we're bootstrapping, wait for this node to become leader
+	if s.config.Raft.Bootstrap {
+		timeout := time.After(5 * time.Second)
+		for {
+			if s.raft.GetState() == raft.Leader {
+				break
+			}
+			select {
+			case <-timeout:
+				logging.Error("timeout waiting for node to become leader")
+				s.Stop()
+				return nil, fmt.Errorf("timeout waiting for node to become leader")
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+
+	}
+
+	logging.Info("raft node initialized", "state", s.raft.GetState())
 
 	// Initialize HTTP server
 	e := echo.New()
@@ -70,14 +100,8 @@ func NewServer(config *config.ServerConfig) (*Server, error) {
 		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept},
 	}))
 
-	// Register routes
-	e.GET("/:store/:key", s.handleGet)
-	e.PUT("/:store/:key", s.handlePut)
-	e.POST("/join", s.handleJoin)
-	e.GET("/:store", s.handleList)
-	e.GET("/stores", s.handleListStores)
-	e.DELETE("/:store/:key", s.handleDelete)
-	e.GET("/status", s.handleStatus)
+	router := api.NewRouter(s.store, s.rules, s.cache, s.raft, s.membership)
+	router.SetupRoutes(e)
 	s.httpServer = e
 
 	return s, nil
@@ -85,16 +109,13 @@ func NewServer(config *config.ServerConfig) (*Server, error) {
 
 // Start starts the server
 func (s *Server) Start() error {
-	// Initialize Raft
-	if err := s.setupRaft(); err != nil {
-		return fmt.Errorf("failed to setup raft: %v", err)
-	}
-
 	// If we have a join address, try to join the cluster
 	if s.config.Raft.JoinAddress != "" {
-		if err := s.JoinCluster(s.config.Raft.JoinAddress); err != nil {
+		logging.Info("attempting to join cluster", "address", s.config.Raft.JoinAddress)
+		if err := s.raft.Join(s.config.Raft.JoinAddress); err != nil {
 			return fmt.Errorf("failed to join cluster: %v", err)
 		}
+		logging.Info("joined cluster", "address", s.config.Raft.JoinAddress, "state", s.raft.GetState(), "leader", s.raft.GetLeaderId(), "id", s.raft.GetId())
 	}
 
 	if s.config.Features.PreWarmRules {
@@ -105,6 +126,7 @@ func (s *Server) Start() error {
 
 	// Start HTTP server
 	go func() {
+		logging.Info("starting HTTP server", "address", s.config.HTTP.Address)
 		if err := s.httpServer.Start(s.config.HTTP.Address); err != nil && err != http.ErrServerClosed {
 			logging.Error("failed to start HTTP server", "error", err)
 			os.Exit(1)
@@ -112,6 +134,11 @@ func (s *Server) Start() error {
 	}()
 
 	return nil
+}
+
+// GetRaftState returns the current state of the Raft node
+func (s *Server) GetRaftState() raft.RaftState {
+	return s.raft.GetState()
 }
 
 // preWarmCache loads all flags and pre-compiles their CEL expressions
@@ -150,8 +177,11 @@ func (s *Server) preWarmCache() error {
 
 // Stop gracefully stops the server
 func (s *Server) Stop() error {
-	if err := s.httpServer.Close(); err != nil {
-		return fmt.Errorf("failed to stop HTTP server: %v", err)
+	logging.Info("stopping server")
+	if s.httpServer != nil {
+		if err := s.httpServer.Close(); err != nil {
+			return fmt.Errorf("failed to stop HTTP server: %v", err)
+		}
 	}
 
 	if s.raft != nil {
@@ -172,5 +202,6 @@ func (s *Server) Stop() error {
 		}
 	}
 
+	logging.Info("server stopped")
 	return nil
 }
