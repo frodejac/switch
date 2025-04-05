@@ -10,6 +10,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
+	"github.com/frodejac/switch/switchd/internal/api"
 	"github.com/frodejac/switch/switchd/internal/config"
 	"github.com/frodejac/switch/switchd/internal/consensus"
 	"github.com/frodejac/switch/switchd/internal/logging"
@@ -70,14 +71,8 @@ func NewServer(config *config.ServerConfig) (*Server, error) {
 		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept},
 	}))
 
-	// Register routes
-	e.GET("/:store/:key", s.handleGet)
-	e.PUT("/:store/:key", s.handlePut)
-	e.POST("/join", s.handleJoin)
-	e.GET("/:store", s.handleList)
-	e.GET("/stores", s.handleListStores)
-	e.DELETE("/:store/:key", s.handleDelete)
-	e.GET("/status", s.handleStatus)
+	router := api.NewRouter(s.store, s.rules, s.cache, s.raft, s.membership)
+	router.SetupRoutes(e)
 	s.httpServer = e
 
 	return s, nil
