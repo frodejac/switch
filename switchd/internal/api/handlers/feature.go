@@ -24,15 +24,17 @@ import (
 
 type FeatureHandler struct {
 	store      storage.Store
+	ffStore    storage.FeatureFlagStore
 	rules      *rules.Engine
 	cache      *rules.Cache
 	raft       *consensus.RaftNode
 	membership storage.MembershipStore
 }
 
-func NewFeatureHandler(store storage.Store, rules *rules.Engine, cache *rules.Cache, raft *consensus.RaftNode, membership storage.MembershipStore) *FeatureHandler {
+func NewFeatureHandler(store storage.Store, ffStore storage.FeatureFlagStore, rules *rules.Engine, cache *rules.Cache, raft *consensus.RaftNode, membership storage.MembershipStore) *FeatureHandler {
 	return &FeatureHandler{
 		store:      store,
+		ffStore:    ffStore,
 		rules:      rules,
 		cache:      cache,
 		raft:       raft,
@@ -48,7 +50,7 @@ func (h *FeatureHandler) HandleGet(c echo.Context) error {
 	key := c.Param("key")
 
 	// Get the flag value
-	value, err := h.store.Get(context.Background(), fmt.Sprintf("%s/%s", store, key))
+	value, err := h.ffStore.GetFeatureFlag(context.Background(), store, key)
 	if err != nil {
 		if errors.Is(err, storage.ErrKeyNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound, "flag not found")
@@ -56,18 +58,8 @@ func (h *FeatureHandler) HandleGet(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to get flag: %v", err))
 	}
 
-	// Parse the flag data
-	var flagData struct {
-		Value      any    `json:"value"`
-		Expression string `json:"expression,omitempty"`
-	}
-	if err := json.Unmarshal(value, &flagData); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to parse flag data: %v", err))
-	}
-
-	// If there's no expression, return the value directly
-	if flagData.Expression == "" {
-		return c.JSON(http.StatusOK, flagData.Value)
+	if value.Type != storage.FeatureFlagTypeCEL {
+		return c.JSON(http.StatusOK, value.Value)
 	}
 
 	// Get the user agent and IP
@@ -109,7 +101,7 @@ func (h *FeatureHandler) HandleGet(c echo.Context) error {
 	program, ok := h.cache.Get(fmt.Sprintf("%s/%s", store, key))
 	if !ok {
 		var err error
-		program, err = h.rules.Compile(flagData.Expression)
+		program, err = h.rules.Compile(value.Value.(string))
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to compile expression: %v", err))
 		}
@@ -169,6 +161,7 @@ func (h *FeatureHandler) HandlePut(c echo.Context) error {
 		return nil
 	}
 
+	// TODO: Change the API once we have the new store working
 	// Parse request body (only if we're the leader)
 	var flagData struct {
 		Value      any    `json:"value"`
@@ -179,8 +172,39 @@ func (h *FeatureHandler) HandlePut(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
 
+	entry := &storage.FeatureFlagEntry{}
+	// Determine the type of the flag
+	switch {
+	case flagData.Expression != "":
+		entry.Type = storage.FeatureFlagTypeCEL
+		entry.Value = flagData.Expression
+	case flagData.Value != nil:
+		switch v := flagData.Value.(type) {
+		case bool:
+			entry.Type = storage.FeatureFlagTypeBoolean
+			entry.Value = v
+		case string:
+			entry.Type = storage.FeatureFlagTypeString
+			entry.Value = v
+		case int:
+			entry.Type = storage.FeatureFlagTypeInt
+			entry.Value = v
+		case float64:
+			entry.Type = storage.FeatureFlagTypeFloat
+			entry.Value = v
+		case map[string]any:
+			entry.Type = storage.FeatureFlagTypeJSON
+			entry.Value = v
+		default:
+			logging.Error("unsupported flag type", "type", fmt.Sprintf("%T", v))
+		}
+	default:
+		logging.Error("no flag value or expression provided")
+	}
+
+	// TODO: Change the command API to use a more structured format
 	// Convert flagData to JSON for storage
-	value, err := json.Marshal(flagData)
+	value, err := json.Marshal(entry)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to marshal data"})
 	}
@@ -277,48 +301,38 @@ func (h *FeatureHandler) HandleList(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
-	values, err := h.store.ListWithValues(context.Background(), store+"/")
+	values, err := h.ffStore.ListFeatureFlagsWithValues(context.Background(), store)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to list flags: %v", err))
 	}
 
-	flags := make(map[string]any)
-	for key, value := range values {
-		var flagValue any
-		if err := json.Unmarshal(value, &flagValue); err != nil {
-			continue // Skip invalid entries
+	// TODO: Remove this when the API is changed
+	// We need to convert entries to the 'old' format
+	type Entry struct {
+		Value      any    `json:"value"`
+		Expression string `json:"expression,omitempty"`
+	}
+	result := make(map[string]Entry, len(values))
+	for k, v := range values {
+		var entry Entry
+		if v.Type == storage.FeatureFlagTypeCEL {
+			entry.Expression = v.Value.(string)
+		} else {
+			entry.Value = v.Value
 		}
-		flags[key] = flagValue
+		// TODO: Change this to only return the key without the store prefix
+		result[store+"/"+k] = entry
 	}
 
-	return c.JSON(http.StatusOK, flags)
+	return c.JSON(http.StatusOK, result)
 }
 
 func (h *FeatureHandler) HandleListStores(c echo.Context) error {
-	keys, err := h.store.List(context.Background(), "")
-	if err != nil {
+	if stores, err := h.ffStore.ListStores(context.Background()); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to list stores: %v", err))
+	} else {
+		return c.JSON(http.StatusOK, stores)
 	}
-
-	stores := make(map[string]bool)
-	for _, key := range keys {
-		// Extract store name from key (format: "store/key")
-		if parts := strings.Split(key, "/"); len(parts) > 1 {
-			store := parts[0]
-			// Skip private stores (starting with __)
-			if !strings.HasPrefix(store, "__") {
-				stores[store] = true
-			}
-		}
-	}
-
-	// Convert map to slice
-	storeList := make([]string, 0, len(stores))
-	for store := range stores {
-		storeList = append(storeList, store)
-	}
-
-	return c.JSON(http.StatusOK, storeList)
 }
 
 // validateStoreName validates a store name

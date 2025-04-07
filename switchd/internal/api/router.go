@@ -13,9 +13,9 @@ type Router struct {
 	membershipHandler *handlers.MembershipHandler
 }
 
-func NewRouter(store storage.Store, rules *rules.Engine, cache *rules.Cache, raft *consensus.RaftNode, membership storage.MembershipStore) *Router {
+func NewRouter(store storage.Store, ffStore storage.FeatureFlagStore, rules *rules.Engine, cache *rules.Cache, raft *consensus.RaftNode, membership storage.MembershipStore) *Router {
 	return &Router{
-		featureHandler:    handlers.NewFeatureHandler(store, rules, cache, raft, membership),
+		featureHandler:    handlers.NewFeatureHandler(store, ffStore, rules, cache, raft, membership),
 		membershipHandler: handlers.NewMembershipHandler(raft, membership),
 	}
 }

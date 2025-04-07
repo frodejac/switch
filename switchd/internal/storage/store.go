@@ -65,3 +65,36 @@ type MembershipStore interface {
 	// ListMemberships returns all membership entries
 	ListMemberships(ctx context.Context) ([]*MembershipEntry, error)
 }
+
+type FeatureFlagType string
+
+const (
+	FeatureFlagTypeBoolean FeatureFlagType = "boolean"
+	FeatureFlagTypeString                  = "string"
+	FeatureFlagTypeInt                     = "int"
+	FeatureFlagTypeFloat                   = "float"
+	FeatureFlagTypeJSON                    = "json"
+	FeatureFlagTypeCEL                     = "cel"
+)
+
+type FeatureFlagEntry struct {
+	Type  FeatureFlagType `json:"type"`
+	Value any             `json:"value"`
+}
+
+type FeatureFlagStore interface {
+	Store
+
+	// GetFeatureFlag retrieves a feature flag by name
+	GetFeatureFlag(ctx context.Context, store, key string) (*FeatureFlagEntry, error)
+	// PutFeatureFlag stores a feature flag
+	PutFeatureFlag(ctx context.Context, store, key string, entry *FeatureFlagEntry) error
+	// DeleteFeatureFlag removes a feature flag
+	DeleteFeatureFlag(ctx context.Context, store, key string) error
+	// ListFeatureFlags returns all feature flags in a given store
+	ListFeatureFlags(ctx context.Context, store string) ([]*FeatureFlagEntry, error)
+	// ListFeatureFlagsWithValues returns all feature flags with their values in a given store
+	ListFeatureFlagsWithValues(ctx context.Context, store string) (map[string]*FeatureFlagEntry, error)
+	// ListStores returns all stores
+	ListStores(ctx context.Context) ([]string, error)
+}

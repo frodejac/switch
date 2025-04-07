@@ -24,6 +24,7 @@ import (
 type Server struct {
 	config     *config.ServerConfig
 	store      storage.Store
+	ffStore    storage.FeatureFlagStore
 	membership storage.MembershipStore
 	raft       *consensus.RaftNode
 	httpServer *echo.Echo
@@ -38,11 +39,12 @@ func NewServer(config *config.ServerConfig) (*Server, error) {
 	}
 
 	// Initialize feature flag store
-	store, err := storage.NewBadgerStore(config.Storage.FeatureFlags)
+	store, err := storage.NewBadgerFeatureFlagStore(config.Storage.FeatureFlags)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create feature flag store: %v", err)
 	}
 	s.store = store
+	s.ffStore = store
 
 	// Initialize membership store
 	membershipStore, err := storage.NewBadgerMembershipStore(config.Storage.Membership)
@@ -100,7 +102,7 @@ func NewServer(config *config.ServerConfig) (*Server, error) {
 		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept},
 	}))
 
-	router := api.NewRouter(s.store, s.rules, s.cache, s.raft, s.membership)
+	router := api.NewRouter(s.store, s.ffStore, s.rules, s.cache, s.raft, s.membership)
 	router.SetupRoutes(e)
 	s.httpServer = e
 
