@@ -1,25 +1,23 @@
-import { useState } from 'react';
+import {useState} from 'react';
 import {
+  Alert,
+  Box,
+  Button,
   Card,
   CardContent,
-  CardActions,
-  Typography,
-  TextField,
-  Button,
-  Box,
   Chip,
-  IconButton,
   Dialog,
-  DialogTitle,
-  DialogContent,
   DialogActions,
-  Alert,
+  DialogContent,
+  DialogTitle,
+  TextField,
+  Typography,
 } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import { FeatureFlag } from '../types/flag';
-import { getFlag } from '../services/api';
+import {FeatureFlag, FeatureFlagType} from '../types/flag';
+import {getFlag} from '../services/api';
 
 interface FlagCardProps {
   flag: FeatureFlag;
@@ -35,7 +33,7 @@ export const FlagCard = ({ flag, onUpdate, onDelete }: FlagCardProps) => {
   const [tryItOutError, setTryItOutError] = useState<string | null>(null);
   const [editedFlag, setEditedFlag] = useState<Partial<FeatureFlag>>({
     value: flag.value,
-    expression: flag.expression,
+    type: flag.type,
   });
 
   const handleSave = () => {
@@ -46,7 +44,7 @@ export const FlagCard = ({ flag, onUpdate, onDelete }: FlagCardProps) => {
   const handleCancel = () => {
     setEditedFlag({
       value: flag.value,
-      expression: flag.expression,
+      type: flag.type,
     });
     setIsEditing(false);
   };
@@ -68,8 +66,8 @@ export const FlagCard = ({ flag, onUpdate, onDelete }: FlagCardProps) => {
     }
   };
 
-  const formatValue = (value: any) => {
-    if (typeof value === 'boolean') {
+  const formatValue = (value: any, type: FeatureFlagType) => {
+    if (type === FeatureFlagType.BOOLEAN) {
       return (
         <Chip
           label={value ? 'Enabled' : 'Disabled'}
@@ -78,11 +76,25 @@ export const FlagCard = ({ flag, onUpdate, onDelete }: FlagCardProps) => {
         />
       );
     }
-    if (typeof value === 'number') {
+    if (type === FeatureFlagType.INT || type === FeatureFlagType.FLOAT) {
       return <Typography variant="body1">{value}</Typography>;
     }
-    if (typeof value === 'string') {
+    if (type === FeatureFlagType.STRING) {
       return <Typography variant="body1">{value}</Typography>;
+    }
+    if (type === FeatureFlagType.JSON) {
+        return (
+            <Typography variant="body1" sx={{ fontFamily: 'monospace', backgroundColor: 'grey.50', p: 1, borderRadius: 1 }}>
+            {JSON.stringify(value, null, 2)}
+            </Typography>
+        );
+    }
+    if (type === FeatureFlagType.CEL) {
+      return (
+        <Typography variant="body1" sx={{ fontFamily: 'monospace', backgroundColor: 'grey.50', p: 1, borderRadius: 1 }}>
+          {value}
+        </Typography>
+      );
     }
     return <Typography variant="body1">{JSON.stringify(value)}</Typography>;
   };

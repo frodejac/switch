@@ -1,10 +1,17 @@
+export enum FeatureFlagType {
+    BOOLEAN = 'boolean',
+    STRING = 'string',
+    INT = 'int',
+    FLOAT = 'float',
+    JSON = 'json',
+    CEL = 'cel',
+}
+
 export interface FeatureFlag {
   key: string;
-  value: any;
-  expression?: string;
+  type: FeatureFlagType;
+  value: unknown;
   store: string;
-  createdAt?: string;
-  updatedAt?: string;
 }
 
 export interface FlagContext {
@@ -12,6 +19,5 @@ export interface FlagContext {
 }
 
 export interface FlagResponse {
-  value: any;
-  evaluated: boolean;
-} 
+  value: unknown;
+}
