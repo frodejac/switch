@@ -161,45 +161,24 @@ func (h *FeatureHandler) HandlePut(c echo.Context) error {
 		return nil
 	}
 
-	// TODO: Change the API once we have the new store working
-	// Parse request body (only if we're the leader)
-	var flagData struct {
-		Value      any    `json:"value"`
-		Expression string `json:"expression,omitempty"`
-	}
-	if err := c.Bind(&flagData); err != nil {
+	entry := &storage.FeatureFlagEntry{}
+	if err := c.Bind(entry); err != nil {
 		logging.Error("failed to parse request body", "error", err)
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
-
-	entry := &storage.FeatureFlagEntry{}
-	// Determine the type of the flag
-	switch {
-	case flagData.Expression != "":
-		entry.Type = storage.FeatureFlagTypeCEL
-		entry.Value = flagData.Expression
-	case flagData.Value != nil:
-		switch v := flagData.Value.(type) {
-		case bool:
-			entry.Type = storage.FeatureFlagTypeBoolean
-			entry.Value = v
-		case string:
-			entry.Type = storage.FeatureFlagTypeString
-			entry.Value = v
-		case int:
-			entry.Type = storage.FeatureFlagTypeInt
-			entry.Value = v
-		case float64:
-			entry.Type = storage.FeatureFlagTypeFloat
-			entry.Value = v
-		case map[string]any:
-			entry.Type = storage.FeatureFlagTypeJSON
-			entry.Value = v
-		default:
-			logging.Error("unsupported flag type", "type", fmt.Sprintf("%T", v))
-		}
+	// Validate flag type
+	if entry.Type == "" {
+		logging.Error("flag type is required")
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "flag type is required"})
+	}
+	// Validate flag value
+	switch entry.Type {
+	case storage.FeatureFlagTypeBoolean, storage.FeatureFlagTypeString, storage.FeatureFlagTypeInt, storage.FeatureFlagTypeFloat, storage.FeatureFlagTypeJSON, storage.FeatureFlagTypeCEL:
+		// Valid types, do nothing
+		break
 	default:
-		logging.Error("no flag value or expression provided")
+		logging.Error("unsupported flag type", "type", fmt.Sprintf("%T", entry.Type))
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("unsupported flag type: %s", entry.Type)})
 	}
 
 	// TODO: Change the command API to use a more structured format
@@ -306,25 +285,7 @@ func (h *FeatureHandler) HandleList(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to list flags: %v", err))
 	}
 
-	// TODO: Remove this when the API is changed
-	// We need to convert entries to the 'old' format
-	type Entry struct {
-		Value      any    `json:"value"`
-		Expression string `json:"expression,omitempty"`
-	}
-	result := make(map[string]Entry, len(values))
-	for k, v := range values {
-		var entry Entry
-		if v.Type == storage.FeatureFlagTypeCEL {
-			entry.Expression = v.Value.(string)
-		} else {
-			entry.Value = v.Value
-		}
-		// TODO: Change this to only return the key without the store prefix
-		result[store+"/"+k] = entry
-	}
-
-	return c.JSON(http.StatusOK, result)
+	return c.JSON(http.StatusOK, values)
 }
 
 func (h *FeatureHandler) HandleListStores(c echo.Context) error {

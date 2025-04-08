@@ -1,22 +1,23 @@
-import { useState } from 'react';
+import {useState} from 'react';
 import {
+  Alert,
   Box,
   Button,
-  Typography,
-  CircularProgress,
   Card,
-  CardContent,
   CardActions,
+  CardContent,
+  CircularProgress,
   Dialog,
-  DialogTitle,
-  DialogContent,
   DialogActions,
+  DialogContent,
+  DialogTitle,
   TextField,
-  Alert,
+  Typography,
 } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { listStores, setFlag } from '../services/api';
+import {useNavigate} from 'react-router-dom';
+import {useQuery, useQueryClient} from '@tanstack/react-query';
+import {listStores, setFlag} from '../services/api';
+import {FeatureFlagType} from "../types/flag.ts";
 
 export const StoresPage = () => {
   const navigate = useNavigate();
@@ -33,11 +34,11 @@ export const StoresPage = () => {
     if (newStoreName) {
       try {
         // Create a default flag in the new store to initialize it
-        await setFlag(newStoreName, '__default', { value: true });
+        await setFlag(newStoreName, '__default', { value: true, type: FeatureFlagType.BOOLEAN });
         setIsCreateDialogOpen(false);
         setNewStoreName('');
         // Refresh stores list
-        queryClient.invalidateQueries({ queryKey: ['stores'] });
+        await queryClient.invalidateQueries({queryKey: ['stores']});
       } catch (err) {
         console.error('Failed to create store:', err);
       }
