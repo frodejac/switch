@@ -55,13 +55,9 @@ export const listFlags = async (store: string): Promise<FeatureFlag[]> => {
   // Transform the map response into an array of flags
   const flagsMap = response.data;
   return Object.entries(flagsMap)
-    .filter(([fullKey]) => {
-      // Extract just the key part (after the store name)
-      const key = fullKey.split('/')[1];
-      return !key.startsWith('__');
-    })
-    .map(([fullKey, value]) => {
-      const key = fullKey.split('/')[1];
+      // Filter out flags starting with '__' (internal flags)
+    .filter(([key]) => !key.startsWith('__'))
+    .map(([key, value]) => {
       return {
         key,
         store,

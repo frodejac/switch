@@ -60,6 +60,7 @@ func (f *FSM) Apply(log *raft.Log) any {
 		if err := f.store.Put(context.Background(), cmd.Key, cmd.Value); err != nil {
 			return fmt.Errorf("failed to store value: %v", err)
 		}
+		// FIXME: Cache invalidation of precompiled CEL programs
 		return nil
 	case "delete":
 		logging.Debug("applying delete command", "key", cmd.Key)

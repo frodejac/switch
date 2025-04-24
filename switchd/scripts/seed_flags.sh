@@ -8,14 +8,22 @@ create_flag() {
     local store=$1
     local key=$2
     local value=$3
-    local expression=$4
+    local type=$4
 
     echo "Creating flag: $store/$key"
     # Create a properly escaped JSON payload
-    local payload=$(jq -n \
+    local payload
+    if [ "$type" != "cel" ]; then
+      payload=$(jq -n \
+        --argjson value "$value" \
+        --arg type "$type" \
+        '{"value": $value, "type": $type}')
+    else
+      payload=$(jq -n \
         --arg value "$value" \
-        --arg expression "$expression" \
-        '{"value": $value, "expression": $expression}')
+        --arg type "$type" \
+        '{"value": $value, "type": $type}')
+    fi
     
     curl -X PUT "$SERVER/$store/$key" \
         -H "Content-Type: application/json" \
@@ -24,43 +32,57 @@ create_flag() {
 }
 
 # Example 1: IP-based feature flag
-create_flag "demo" "internal_access" "enabled" \
-    "request.ip.startsWith('10.') || request.ip.startsWith('192.168.') ? \"enabled\" : \"disabled\""
+create_flag "demo" \
+  "internal_access" \
+  "request.ip.startsWith('10.') || request.ip.startsWith('192.168.') ? \"enabled\" : \"disabled\"" \
+  "cel"
 
 # Example 2: Device-based feature flag
-create_flag "demo" "mobile_optimized" "enabled" \
-    "device.mobile ? \"enabled\" : \"disabled\""
+create_flag "demo" \
+  "mobile_optimized" \
+  'device.mobile ? "enabled" : "disabled"' \
+  "cel"
 
 # Example 3: Browser-based feature flag
-create_flag "demo" "chrome_only" "enabled" \
-    "device.browser.name == \"Chrome\" ? \"enabled\" : \"disabled\""
+create_flag "demo" \
+  "chrome_only" \
+  'device.browser.name == "Chrome" ? "enabled" : "disabled"' \
+  "cel"
 
 # Example 4: Time-based feature flag
-create_flag "demo" "business_hours" "enabled" \
-    "time.getHours() >= 9 && time.getHours() < 17 ? \"enabled\" : \"disabled\""
+create_flag "demo" \
+  "business_hours" \
+  'time.getHours() >= 9 && time.getHours() < 17 ? "enabled" : "disabled"' \
+  "cel"
 
-# Example 5: Bot detection
-create_flag "demo" "human_only" "enabled" \
-    "!device.bot ? \"enabled\" : \"disabled\""
+# Example 5: Boolean flag
+create_flag "demo" \
+  "feature_enabled" \
+  true \
+  "boolean"
 
-# Example 6: OS-specific feature
-create_flag "demo" "macos_feature" "enabled" \
-    "device.os.name == \"macOS\" ? \"enabled\" : \"disabled\""
+# Example 6: String flag
+create_flag "demo" \
+  "feature_name" \
+  "\"New Feature\"" \
+  "string"
 
-# Example 7: Browser version check
-create_flag "demo" "modern_browser" "enabled" \
-    "device.browser.name == \"Chrome\" && device.browser.version >= \"100\" ? \"enabled\" : \"disabled\""
+# Example 7: Int flag
+create_flag "demo" \
+  "default_page_size" \
+  100 \
+  "int"
 
-# Example 8: Complex device targeting
-create_flag "demo" "premium_mobile" "enabled" \
-    "device.mobile && device.os.name == \"iOS\" && device.browser.name == \"Safari\" ? \"enabled\" : \"disabled\""
+# Example 8: Float flag
+create_flag "demo" \
+  "feature_ratio" \
+  0.7 \
+  "float"
 
-# Example 9: Time-based with device targeting
-create_flag "demo" "mobile_promo" "enabled" \
-    "device.mobile && time.getHours() >= 18 && time.getHours() < 22 ? \"enabled\" : \"disabled\""
+# Example 9: JSON value
+create_flag "demo" \
+  "feature_payload" \
+  '{"key": "value"}' \
+  "json"
 
-# Example 10: IP range with device type
-create_flag "demo" "corporate_devices" "enabled" \
-    "request.ip.startsWith('172.16.') && !device.mobile ? \"enabled\" : \"disabled\""
-
-echo "All feature flags have been created successfully!" 
+echo "All feature flags have been created successfully!"

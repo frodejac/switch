@@ -1,25 +1,23 @@
-import { useState } from 'react';
+import {useState} from 'react';
 import {
+  Alert,
+  Box,
+  Button,
   Card,
   CardContent,
-  CardActions,
-  Typography,
-  TextField,
-  Button,
-  Box,
   Chip,
-  IconButton,
   Dialog,
-  DialogTitle,
-  DialogContent,
   DialogActions,
-  Alert,
+  DialogContent,
+  DialogTitle, MenuItem,
+  TextField,
+  Typography,
 } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import { FeatureFlag } from '../types/flag';
-import { getFlag } from '../services/api';
+import {FeatureFlag, FeatureFlagType} from '../types/flag';
+import {getFlag} from '../services/api';
 
 interface FlagCardProps {
   flag: FeatureFlag;
@@ -31,11 +29,11 @@ export const FlagCard = ({ flag, onUpdate, onDelete }: FlagCardProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isTryItOutDialogOpen, setIsTryItOutDialogOpen] = useState(false);
-  const [tryItOutResult, setTryItOutResult] = useState<any>(null);
+  const [tryItOutResult, setTryItOutResult] = useState<unknown>(null);
   const [tryItOutError, setTryItOutError] = useState<string | null>(null);
   const [editedFlag, setEditedFlag] = useState<Partial<FeatureFlag>>({
     value: flag.value,
-    expression: flag.expression,
+    type: flag.type,
   });
 
   const handleSave = () => {
@@ -46,7 +44,7 @@ export const FlagCard = ({ flag, onUpdate, onDelete }: FlagCardProps) => {
   const handleCancel = () => {
     setEditedFlag({
       value: flag.value,
-      expression: flag.expression,
+      type: flag.type,
     });
     setIsEditing(false);
   };
@@ -68,8 +66,8 @@ export const FlagCard = ({ flag, onUpdate, onDelete }: FlagCardProps) => {
     }
   };
 
-  const formatValue = (value: any) => {
-    if (typeof value === 'boolean') {
+  const formatValue = (value: unknown, type: FeatureFlagType) => {
+    if (type === FeatureFlagType.BOOLEAN) {
       return (
         <Chip
           label={value ? 'Enabled' : 'Disabled'}
@@ -78,11 +76,25 @@ export const FlagCard = ({ flag, onUpdate, onDelete }: FlagCardProps) => {
         />
       );
     }
-    if (typeof value === 'number') {
-      return <Typography variant="body1">{value}</Typography>;
+    if (type === FeatureFlagType.INT || type === FeatureFlagType.FLOAT) {
+      return <Typography variant="body1">{value as number}</Typography>;
     }
-    if (typeof value === 'string') {
-      return <Typography variant="body1">{value}</Typography>;
+    if (type === FeatureFlagType.STRING) {
+      return <Typography variant="body1">{value as string}</Typography>;
+    }
+    if (type === FeatureFlagType.JSON) {
+        return (
+            <Typography variant="body1" sx={{ fontFamily: 'monospace', backgroundColor: 'grey.50', p: 1, borderRadius: 1 }}>
+            {JSON.stringify(value, null, 2)}
+            </Typography>
+        );
+    }
+    if (type === FeatureFlagType.CEL) {
+      return (
+        <Typography variant="body1" sx={{ fontFamily: 'monospace', backgroundColor: 'grey.50', p: 1, borderRadius: 1 }}>
+          {value as string}
+        </Typography>
+      );
     }
     return <Typography variant="body1">{JSON.stringify(value)}</Typography>;
   };
@@ -136,15 +148,31 @@ export const FlagCard = ({ flag, onUpdate, onDelete }: FlagCardProps) => {
                 size="small"
               />
               <TextField
-                label="CEL Expression"
-                value={editedFlag.expression || ''}
-                onChange={(e) => setEditedFlag({ ...editedFlag, expression: e.target.value })}
+                label="Type"
+                select
+                value={editedFlag.type || flag.type}
+                onChange={(e) => setEditedFlag({ ...editedFlag, type: e.target.value as FeatureFlagType })}
                 fullWidth
-                multiline
-                rows={2}
                 size="small"
-                placeholder="e.g., context.region == 'us-west' && context.environment == 'prod'"
-              />
+              >
+                {Object.values(FeatureFlagType).map((type) => (
+                  <MenuItem key={type} value={type}>
+                    {type}
+                  </MenuItem>
+                ))}
+              </TextField>
+              {editedFlag.type === FeatureFlagType.CEL && (
+                  <TextField
+                    label="CEL Expression"
+                    value={editedFlag.value || ''}
+                    onChange={(e) => setEditedFlag({ ...editedFlag, value: e.target.value })}
+                    fullWidth
+                    multiline
+                    rows={2}
+                    size="small"
+                    placeholder="e.g., context.region == 'us-west' && context.environment == 'prod'"
+                    />
+              )}
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
                 <Button size="small" onClick={handleCancel}>
                   Cancel
@@ -159,28 +187,7 @@ export const FlagCard = ({ flag, onUpdate, onDelete }: FlagCardProps) => {
               <Typography variant="body2" color="text.secondary" gutterBottom>
                 Value:
               </Typography>
-              {formatValue(flag.value)}
-              {flag.expression && (
-                <>
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                    Expression:
-                  </Typography>
-                  <Typography 
-                    variant="body1" 
-                    sx={{ 
-                      fontFamily: 'monospace',
-                      backgroundColor: 'grey.50',
-                      p: 1,
-                      borderRadius: 1,
-                      fontSize: '0.875rem',
-                      border: '1px solid',
-                      borderColor: 'grey.200'
-                    }}
-                  >
-                    {flag.expression}
-                  </Typography>
-                </>
-              )}
+              {formatValue(flag.value, flag.type)}
             </Box>
           )}
         </CardContent>
@@ -213,7 +220,7 @@ export const FlagCard = ({ flag, onUpdate, onDelete }: FlagCardProps) => {
               <Typography variant="body2" color="text.secondary" gutterBottom>
                 Result:
               </Typography>
-              {formatValue(tryItOutResult)}
+              {formatValue(tryItOutResult, flag.type)}
             </Box>
           )}
         </DialogContent>
